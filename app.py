@@ -719,7 +719,7 @@ def get_macro_data() -> dict:
             pass
     return result
 
-@st.cache_data(ttl=300)
+@st.cache_data(ttl=6*3600)
 def fetch_company_news(ticker: str, company_name: str) -> list:
     """Fetch news specifically about the given ticker/company. Uses yfinance first, then RSS."""
     articles = []
@@ -789,7 +789,7 @@ def fetch_company_news(ticker: str, company_name: str) -> list:
     return unique[:25]
 
 
-@st.cache_data(ttl=300)
+@st.cache_data(ttl=6*3600)
 def fetch_geo_news(ticker: str, sector: str, industry: str) -> list:
     """Fetch recent geopolitical/macro news relevant to company sector."""
     # Sector → search keywords
@@ -853,6 +853,111 @@ def fetch_geo_news(ticker: str, sector: str, industry: str) -> list:
             seen.add(key)
             unique.append(art)
     return unique[:15]
+
+
+# ─── HIGH-IMPACT NEWS KEYWORDS ────────────────────────────────────────────────
+_HIGH_IMPACT_KW = [
+    # Earnings & guidance
+    "earnings", "beat", "miss", "guidance", "eps", "revenue", "profit warning",
+    "quarterly results", "outlook",
+    # Fed & macro
+    "federal reserve", "fed rate", "interest rate", "fomc", "rate hike", "rate cut",
+    "inflation", "cpi", "pce", "nonfarm payroll", "gdp", "recession",
+    # Geopolitical
+    "tariff", "trade war", "china ban", "export control", "sanction",
+    "russia ukraine", "middle east", "opec",
+    # Corporate events
+    "merger", "acquisition", "buyout", "ipo", "bankruptcy", "chapter 11",
+    "layoff", "ceo resign", "ceo fired", "fraud", "sec investigation",
+    "antitrust", "fine", "lawsuit settlement",
+    # Market structure
+    "short squeeze", "margin call", "circuit breaker", "halt", "crash", "rally",
+]
+
+
+def is_high_impact(title: str, summary: str) -> bool:
+    """Return True if news item is likely market-moving."""
+    text = (title + " " + summary).lower()
+    return any(kw in text for kw in _HIGH_IMPACT_KW)
+
+
+@st.cache_data(ttl=6*3600)
+def fetch_market_digest() -> list:
+    """
+    Fetch today's top market-moving headlines from general financial feeds.
+    Returns items sorted: high-impact first.
+    """
+    _rss = [
+        ("https://feeds.reuters.com/reuters/businessNews",           "Reuters"),
+        ("https://www.cnbc.com/id/10001147/device/rss/rss.html",    "CNBC"),
+        ("https://feeds.marketwatch.com/marketwatch/topstories/",    "MarketWatch"),
+        ("https://finance.yahoo.com/news/rssindex",                  "Yahoo Finance"),
+        ("https://rss.nytimes.com/services/xml/rss/nyt/Business.xml","NYT Business"),
+    ]
+    articles, headers = [], {"User-Agent": "Mozilla/5.0 (compatible; MarketIntel/1.0)"}
+    for url, src in _rss:
+        try:
+            resp = requests.get(url, timeout=8, headers=headers)
+            if resp.status_code != 200:
+                continue
+            root = ET.fromstring(resp.content)
+            for item in root.findall(".//item")[:12]:
+                title   = re.sub(r"<[^>]+>", "", item.findtext("title",       "")).strip()
+                desc    = re.sub(r"<[^>]+>", "", item.findtext("description", ""))[:220].strip()
+                link    = item.findtext("link",    "").strip()
+                pubdate = item.findtext("pubDate", "")[:25]
+                if not title:
+                    continue
+                articles.append({
+                    "title": title, "summary": desc,
+                    "link":  link,  "published": pubdate,
+                    "source": src,
+                    "impact": is_high_impact(title, desc),
+                })
+        except Exception:
+            continue
+
+    seen, unique = set(), []
+    for art in articles:
+        key = art["title"][:60].lower()
+        if key not in seen:
+            seen.add(key)
+            unique.append(art)
+
+    # High-impact first, then rest
+    unique.sort(key=lambda x: (0 if x["impact"] else 1))
+    return unique[:20]
+
+
+def _digest_impact_summary(articles: list, lang: str) -> str:
+    """One-paragraph market impact summary from digest headlines."""
+    if not articles:
+        return ""
+    titles = " ".join(a["title"].lower() for a in articles[:10])
+
+    fed_related = any(kw in titles for kw in ["fed", "rate", "fomc", "inflation", "cpi"])
+    earnings    = any(kw in titles for kw in ["earnings", "profit", "beat", "miss", "eps"])
+    geo_related = any(kw in titles for kw in ["tariff", "china", "war", "sanction", "opec"])
+    corp_event  = any(kw in titles for kw in ["merger", "acquisition", "bankruptcy", "layoff", "ceo"])
+    market_move = any(kw in titles for kw in ["rally", "drop", "crash", "surge", "plunge"])
+
+    themes = []
+    if lang == "ko":
+        if fed_related:  themes.append("📊 **연준/금리** 관련 뉴스가 시장 방향성의 핵심 변수")
+        if earnings:     themes.append("💹 **기업 실적** 발표가 개별 주가 변동성을 키울 전망")
+        if geo_related:  themes.append("🌐 **무역/지정학** 이슈가 위험자산 전반에 영향")
+        if corp_event:   themes.append("🏢 **M&A·구조조정** 이슈로 관련 섹터 변동 예상")
+        if market_move:  themes.append("⚡ **대형 시장 이벤트** 발생 — 변동성 주의 필요")
+        if not themes:   themes.append("📰 특별한 대형 이슈 없이 전반적 시장 흐름 관찰 중")
+        return " | ".join(themes)
+    else:
+        if fed_related:  themes.append("📊 **Fed/rates** news is the key directional driver")
+        if earnings:     themes.append("💹 **Earnings** releases driving individual stock moves")
+        if geo_related:  themes.append("🌐 **Trade/geo** issues weighing on risk assets broadly")
+        if corp_event:   themes.append("🏢 **M&A/restructuring** creating sector-level volatility")
+        if market_move:  themes.append("⚡ **Major market event** — watch for elevated volatility")
+        if not themes:   themes.append("📰 No major catalysts — general market flow monitoring")
+        return " | ".join(themes)
 
 
 # Sector → relevant geo risk factor keys
@@ -1736,10 +1841,81 @@ def build_geo_timeline(lang: str) -> go.Figure:
     )
     return fig
 
-# ─── AUTO REFRESH ────────────────────────────────────────────────────────────
-_REFRESH_INTERVAL_MS = 5 * 60 * 1000  # 5 minutes
+# ─── MARKET-HOURS AWARE AUTO REFRESH ─────────────────────────────────────────
+def _now_et():
+    """Current datetime in US Eastern (approximate DST handling)."""
+    utcnow = datetime.utcnow()
+    month  = utcnow.month
+    is_dst = 3 <= month <= 11   # approximate: EDT Mar–Nov
+    return utcnow + timedelta(hours=-4 if is_dst else -5)
+
+def _get_refresh_interval_ms() -> int:
+    """
+    Return appropriate st_autorefresh interval:
+    - Near market close (15:55–16:05 ET weekdays): 1 min — catch the closing print
+    - Market hours (9:30–15:55 ET weekdays): 15 min
+    - Pre/after hours weekdays: 2 hours
+    - Weekends: 6 hours
+    """
+    et    = _now_et()
+    wday  = et.weekday()          # 0=Mon … 6=Sun
+    h, m  = et.hour, et.minute
+
+    if wday >= 5:                          # weekend
+        return 6 * 3600 * 1000
+    near_close = (h == 15 and m >= 55) or (h == 16 and m <= 5)
+    if near_close:
+        return 60 * 1000                   # 1 min near close
+    market_open = (h > 9 or (h == 9 and m >= 30)) and h < 16
+    if market_open:
+        return 15 * 60 * 1000             # 15 min during session
+    return 2 * 3600 * 1000                # 2 hours pre/after hours
+
+def _next_update_label(lang: str) -> str:
+    """Human-readable label for next scheduled price update."""
+    et    = _now_et()
+    wday  = et.weekday()
+    h, m  = et.hour, et.minute
+    is_ko = lang == "ko"
+
+    # Weekend
+    if wday == 5:
+        nxt = "월요일 장 오픈 시" if is_ko else "Monday market open"
+    elif wday == 6:
+        nxt = "월요일 장 오픈 시" if is_ko else "Monday market open"
+    else:
+        near_close   = (h == 15 and m >= 55) or (h == 16 and m <= 5)
+        market_open  = (h > 9 or (h == 9 and m >= 30)) and h < 16
+        if near_close:
+            nxt = "마감가 확정 중 (1분마다)" if is_ko else "Capturing close price (1 min)"
+        elif market_open:
+            nxt = "15분마다 (장 중)" if is_ko else "Every 15 min (market open)"
+        elif h < 9 or (h == 9 and m < 30):
+            nxt = "오전 9:30 ET 장 오픈 시" if is_ko else "Market open 9:30 AM ET"
+        else:
+            nxt = "내일 장 오픈 시" if is_ko else "Next market open"
+    return nxt
+
+def _next_news_update_label(lang: str) -> str:
+    """Label for next 6-hour news update cycle (00/06/12/18 UTC)."""
+    now  = datetime.utcnow()
+    slot = ((now.hour // 6) + 1) * 6
+    if slot >= 24:
+        slot = 0
+        nxt  = now.replace(hour=0, minute=0, second=0) + timedelta(days=1)
+    else:
+        nxt  = now.replace(hour=slot, minute=0, second=0)
+    mins = int((nxt - now).total_seconds() / 60)
+    if mins < 60:
+        t = (f"{mins}분 후" if lang=="ko" else f"in {mins}min")
+    else:
+        t = (f"{mins//60}시간 후" if lang=="ko" else f"in {mins//60}h")
+    return (f"다음 뉴스 업데이트: {nxt.strftime('%H:%M')} UTC ({t})"
+            if lang=="ko" else
+            f"Next news update: {nxt.strftime('%H:%M')} UTC ({t})")
+
 if _HAS_AUTOREFRESH:
-    st_autorefresh(interval=_REFRESH_INTERVAL_MS, limit=None, key="global_autorefresh")
+    st_autorefresh(interval=_get_refresh_interval_ms(), limit=None, key="global_autorefresh")
 
 # ─── CUSTOM CSS ───────────────────────────────────────────────────────────────
 st.markdown("""
@@ -1920,6 +2096,64 @@ with st.sidebar:
 
     st.divider()
 
+    # ── Daily Market Digest ────────────────────────────────────────────────────
+    _digest_label = "📰 오늘의 주요 이슈" if lang == "ko" else "📰 Daily Market Digest"
+    with st.expander(_digest_label, expanded=True):
+        _digest_news = fetch_market_digest()
+        _high = [a for a in _digest_news if a["impact"]][:7]
+        _low  = [a for a in _digest_news if not a["impact"]][:3]
+        _show = _high + _low
+
+        if _show:
+            for art in _show:
+                _imp_badge = (
+                    "<span style='color:#FF4040;font-size:0.65rem;font-weight:700;"
+                    "border:1px solid #FF4040;border-radius:8px;padding:1px 5px;"
+                    "margin-right:4px;'>HOT</span>"
+                    if art["impact"] else ""
+                )
+                _t = art["title"]
+                _pub = art["published"][:10] if art["published"] else ""
+                _src = art["source"]
+                st.markdown(
+                    f"<div style='padding:6px 0;border-bottom:1px solid #1E2130;'>"
+                    f"  {_imp_badge}"
+                    f"  <a href='{art['link']}' target='_blank' "
+                    f"     style='color:#D0D8E8;font-size:0.78rem;text-decoration:none;"
+                    f"             line-height:1.4;'>{_t}</a>"
+                    f"  <div style='color:#4A5568;font-size:0.68rem;margin-top:2px;'>"
+                    f"    {_src} · {_pub}</div>"
+                    f"</div>",
+                    unsafe_allow_html=True
+                )
+
+            # Impact summary
+            _sum = _digest_impact_summary(_show, lang)
+            if _sum:
+                _imp_hdr = "📊 오늘의 시장 영향 요약" if lang == "ko" else "📊 Today's Market Impact"
+                st.markdown(
+                    f"<div style='background:#0F1527;border-left:3px solid #FFA500;"
+                    f"border-radius:0 8px 8px 0;padding:8px 10px;margin-top:8px;'>"
+                    f"  <div style='color:#FFA500;font-size:0.72rem;font-weight:700;"
+                    f"             margin-bottom:4px;'>{_imp_hdr}</div>"
+                    f"  <div style='color:#B0BEC5;font-size:0.75rem;line-height:1.5;'>"
+                    f"    {_sum}</div>"
+                    f"</div>",
+                    unsafe_allow_html=True
+                )
+
+            # Next news update countdown
+            _news_nxt = _next_news_update_label(lang)
+            st.markdown(
+                f"<div style='color:#4A5568;font-size:0.65rem;margin-top:6px;"
+                f"text-align:right;'>🕐 {_news_nxt}</div>",
+                unsafe_allow_html=True
+            )
+        else:
+            st.caption("뉴스 로딩 중..." if lang == "ko" else "Loading digest...")
+
+    st.divider()
+
     # S&P 500 by sector
     st.markdown(f"**{T('sp500_list')}**")
     for sector, stocks in SP500_POPULAR.items():
@@ -1973,10 +2207,10 @@ if not df_2y.empty:
     _last_idx = df_2y.index[-1]
     _market_date_str = pd.Timestamp(_last_idx).strftime("%Y-%m-%d")
 
-_fetch_str = _now_utc.strftime("%Y-%m-%d %H:%M") + " UTC"
-_auto_label = ("5분마다 자동갱신" if lang == "ko" else "auto-refresh 5 min") if _HAS_AUTOREFRESH else ("수동 새로고침" if lang == "ko" else "manual refresh")
-_ts_label   = ("주가 기준일" if lang == "ko" else "Price date")
-_ts_fetched = ("조회 시각" if lang == "ko" else "Fetched")
+_fetch_str   = _now_utc.strftime("%Y-%m-%d %H:%M") + " UTC"
+_ts_label    = ("주가 기준일" if lang == "ko" else "Price date")
+_ts_fetched  = ("조회 시각"   if lang == "ko" else "Fetched")
+_next_price  = _next_update_label(lang)
 
 st.markdown(f"""
 <div class="data-timestamp">
@@ -1985,7 +2219,7 @@ st.markdown(f"""
     <span style='color:#4A5568;'>|</span>
     <span>{_ts_fetched}: <b style='color:#EAEAEA;'>{_fetch_str}</b></span>
     <span style='color:#4A5568;'>|</span>
-    <span style='color:#00D4AA;'>{_auto_label}</span>
+    <span style='color:#00D4AA;'>🔄 {_next_price}</span>
 </div>
 """, unsafe_allow_html=True)
 
@@ -2202,9 +2436,13 @@ if _show_tabs:
                 st.cache_data.clear()
                 st.rerun()
 
-        now_str = datetime.now().strftime("%Y-%m-%d %H:%M")
-        st.markdown(f"<span class='update-badge'>🟢 {T('last_updated')}: {now_str} UTC &nbsp;|&nbsp; 5분마다 자동갱신</span>",
-                    unsafe_allow_html=True)
+        now_str = datetime.utcnow().strftime("%Y-%m-%d %H:%M")
+        _news_nxt_lbl = _next_news_update_label(lang)
+        st.markdown(
+            f"<span class='update-badge'>🟢 {T('last_updated')}: {now_str} UTC"
+            f" &nbsp;|&nbsp; 🕐 {_news_nxt_lbl}</span>",
+            unsafe_allow_html=True
+        )
         if st.session_state.news_translated:
             st.markdown("<span class='update-badge' style='background:#1E3A5F;color:#64B5F6;margin-left:8px;'>🌐 한글 번역 중</span>",
                         unsafe_allow_html=True)
@@ -2212,6 +2450,13 @@ if _show_tabs:
 
         with st.spinner(T("news_loading")):
             articles = fetch_company_news(ticker, company_name)
+
+        # Sort: high-impact first
+        if articles:
+            for art in articles:
+                if "impact" not in art:
+                    art["impact"] = is_high_impact(art["title"], art.get("summary", ""))
+            articles.sort(key=lambda x: (0 if x["impact"] else 1))
 
         if articles:
             n_cols = 2
@@ -2226,9 +2471,15 @@ if _show_tabs:
                             with st.spinner("번역 중..."):
                                 title_text   = translate_to_korean(title_text)
                                 summary_text = translate_to_korean(summary_text)
+                        _hot_badge = (
+                            "<span style='background:#FF4040;color:#fff;font-size:0.65rem;"
+                            "font-weight:700;border-radius:8px;padding:1px 6px;"
+                            "margin-right:6px;vertical-align:middle;'>HOT</span>"
+                            if art.get("impact") else ""
+                        )
                         st.markdown(f"""
-                        <div class='news-card'>
-                            <div class='news-title'><a href='{art["link"]}' target='_blank'
+                        <div class='news-card' style='{"border-left:3px solid #FF4040;" if art.get("impact") else ""}'>
+                            <div class='news-title'>{_hot_badge}<a href='{art["link"]}' target='_blank'
                                 style='color:#EAEAEA;text-decoration:none;'>{title_text}</a></div>
                             <div class='news-meta'>📡 {art["source"]} &nbsp;|&nbsp;
                                 🕐 {art["published"][:16] if art["published"] else "N/A"}</div>
