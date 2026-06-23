@@ -2616,203 +2616,203 @@ if _show_tabs:
                               else "Relationship data available for AAPL, MSFT, NVDA, TSLA."))
 
     # ══════════════════ TAB 8: SEMICONDUCTOR ECOSYSTEM ══════════════════
-    SEMI_UNIVERSE = {
-        "fabless_en": {
-            "label": "🧠 Fabless Chip Designers",
-            "desc": "Design chips but outsource fabrication to foundries",
-            "color": "#FFA500",
-            "companies": [
-                ("NVDA",  "NVIDIA",     "AI GPU / Data Center",        "USA",    4.5),
-                ("AMD",   "AMD",        "CPU / GPU / AI Chips",         "USA",    3.2),
-                ("QCOM",  "Qualcomm",   "Mobile SoC / 5G Modem",       "USA",    2.8),
-                ("AVGO",  "Broadcom",   "Networking / Wi-Fi Chips",     "USA",    3.8),
-                ("MRVL",  "Marvell",    "Data Center / 5G",            "USA",    1.2),
-                ("MCHP",  "Microchip",  "MCU / Analog",                "USA",    0.8),
-                ("SWKS",  "Skyworks",   "RF Chips for Mobile",         "USA",    0.7),
-                ("MPWR",  "Monolithic Power","Power Management",       "USA",    0.9),
-                ("AMAT",  "Applied Mat","(Equipment — see below)",     "USA",    None),
-                ("ARM",   "Arm Holdings","CPU Architecture Licensor",  "UK",     1.5),
-                ("MDIA",  "MediaTek",   "Mobile SoC (budget/mid)",     "Taiwan", 1.1),
-                ("BRCM",  "Broadcom",   "Networking ASIC",             "USA",    3.8),
-            ],
-        },
-        "idm_en": {
-            "label": "🏭 IDM (Integrated Device Manufacturers)",
-            "desc": "Design AND manufacture their own chips",
-            "color": "#00D4AA",
-            "companies": [
-                ("INTC",      "Intel",           "CPU / Data Center / Foundry", "USA",    1.8),
-                ("005930.KS", "Samsung",         "Logic / DRAM / NAND / Foundry","Korea",  4.5),
-                ("TXN",       "Texas Instruments","Analog / Embedded",          "USA",    1.6),
-                ("STM",       "STMicroelectronics","MCU / Power / Automotive",  "Europe", 0.7),
-                ("NXPI",      "NXP Semiconductors","Automotive / IoT",          "Netherlands",0.6),
-                ("ON",        "ON Semiconductor","Power / Automotive",          "USA",    0.5),
-                ("WOLF",      "Wolfspeed",       "Silicon Carbide (SiC) EV",    "USA",    0.2),
-            ],
-        },
-        "foundry_en": {
-            "label": "🔬 Pure-Play Foundries",
-            "desc": "Manufacture chips designed by others (contract fab)",
-            "color": "#AB63FA",
-            "companies": [
-                ("TSM",       "TSMC",            "World's #1 Foundry — 2nm/3nm/5nm", "Taiwan", 8.5),
-                ("GFS",       "GlobalFoundries", "Mature nodes, US/EU security supply", "USA", 0.9),
-                ("000660.KS", "SK Hynix",        "Memory + Foundry services",       "Korea", 1.2),
-                ("UMC",       "UMC",             "Mature node foundry",             "Taiwan", 0.4),
-                ("SMICY",     "SMIC",            "China's largest foundry (N+2 node)","China", 0.6),
-                ("VX",        "Semtech",         "Specialized analog foundry",      "USA",    0.2),
-            ],
-        },
-        "memory_en": {
-            "label": "💾 Memory Manufacturers",
-            "desc": "DRAM, NAND Flash, HBM production",
-            "color": "#64B5F6",
-            "companies": [
-                ("MU",        "Micron",          "DRAM / NAND / HBM — US memory giant", "USA",   0.9),
-                ("005930.KS", "Samsung Memory",  "World #1 DRAM + NAND + HBM3E",    "Korea",  4.5),
-                ("000660.KS", "SK Hynix",        "HBM3E leader for NVIDIA AI chips", "Korea",  1.2),
-                ("WDC",       "Western Digital", "NAND / SSD storage",              "USA",    0.5),
-                ("STX",       "Seagate",         "HDD + Enterprise storage",        "USA",    0.4),
-            ],
-        },
-        "equipment_en": {
-            "label": "⚙️ Semiconductor Equipment",
-            "desc": "Machines that make chips — critical chokepoint",
-            "color": "#FF6B6B",
-            "companies": [
-                ("ASML",  "ASML",              "EUV Lithography — sole global supplier", "Netherlands", 3.8),
-                ("AMAT",  "Applied Materials", "CVD/PVD/Etch/CMP tools",            "USA",  1.6),
-                ("LRCX",  "Lam Research",      "Etch & Deposition systems",          "USA",  1.1),
-                ("KLAC",  "KLA Corporation",   "Process Control & Inspection",       "USA",  0.9),
-                ("ONTO",  "Onto Innovation",   "Metrology & Inspection",             "USA",  0.2),
-                ("ACMR",  "ACM Research",      "Wafer Cleaning — China alt.",        "USA",  0.2),
-                ("TOELY", "Tokyo Electron",    "CVD / Etch / Coater systems",        "Japan",1.8),
-                ("HIMX",  "Himax",             "Display driver ICs",                 "Taiwan",0.1),
-                ("COHU",  "Cohu",              "Semiconductor test handlers",        "USA",  0.1),
-                ("FORM",  "FormFactor",        "Wafer probe cards",                  "USA",  0.1),
-                ("ENTG",  "Entegris",          "Materials delivery systems",         "USA",  0.3),
-                ("CCMP",  "CMC Materials",     "CMP slurries & pads",               "USA",  0.2),
-            ],
-        },
-        "materials_en": {
-            "label": "⛏️ Semiconductor Materials & Chemicals",
-            "desc": "Silicon wafers, gases, photoresist, specialty chemicals",
-            "color": "#FFD700",
-            "companies": [
-                ("SIEGY", "Shin-Etsu Chemical","#1 silicon wafer maker globally",   "Japan", 1.2),
-                ("SUMCF", "SUMCO",             "#2 silicon wafer maker",            "Japan", 0.3),
-                ("SOLV",  "Solvay",            "Ultra-pure chemicals for fabs",     "Belgium",0.2),
-                ("APD",   "Air Products",      "Ultra-pure gases (N2, H2, Ar, O2)", "USA",   0.6),
-                ("LIN",   "Linde",             "Specialty gases for semiconductor", "Ireland",1.8),
-                ("AZPN",  "AspenTech",         "Process optimization software",     "USA",   0.2),
-                ("CMC",   "CMC Materials",     "Polishing slurries (CMP)",          "USA",   0.2),
-                ("FSM",   "Ferroglobe",        "Silicon metal — solar/semi raw mat","Spain", 0.1),
-                ("TROX",  "Tronox",            "Titanium dioxide specialty chems",  "USA",   0.1),
-            ],
-        },
-        "packaging_en": {
-            "label": "📦 Advanced Packaging & Testing",
-            "desc": "OSAT, CoWoS, HBM stacking, chip-on-wafer",
-            "color": "#00BFA5",
-            "companies": [
-                ("ASX",   "ASE Technology",   "World's #1 OSAT packaging & test",  "Taiwan",0.5),
-                ("AMKR",  "Amkor Technology", "#2 OSAT — advanced packaging",       "USA",   0.3),
-                ("MX",    "Magnachip",        "Display driver, OLED IC",            "Korea", 0.1),
-                ("IMOS",  "ChipMOS",          "Memory test & packaging",            "Taiwan",0.1),
-                ("SPIL",  "SPIL",             "Siliconware Precision packaging",    "Taiwan",0.2),
-            ],
-        },
-        "eda_ip_en": {
-            "label": "🖥️ EDA Software & IP",
-            "desc": "Design tools and IP blocks that enable chip design",
-            "color": "#CE93D8",
-            "companies": [
-                ("SNPS",  "Synopsys",          "EDA tools + IP (acquired Ansys)",   "USA",   0.9),
-                ("CDNS",  "Cadence Design",    "EDA tools — PCB, IC, system sim",   "USA",   0.8),
-                ("MENT",  "Siemens EDA",       "Mentor Graphics — part of Siemens", "Germany",None),
-                ("ARM",   "Arm Holdings",      "CPU IP cores — licensed to all",    "UK",    1.5),
-                ("AMBA",  "Ambarella",         "Vision AI / SoC IP",                "USA",   0.2),
-                ("IMPV",  "Imperva",           "Security IP",                       "USA",   0.1),
-            ],
-        },
-    }
+SEMI_UNIVERSE = {
+    "fabless_en": {
+        "label": "🧠 Fabless Chip Designers",
+        "desc": "Design chips but outsource fabrication to foundries",
+        "color": "#FFA500",
+        "companies": [
+            ("NVDA",  "NVIDIA",     "AI GPU / Data Center",        "USA",    4.5),
+            ("AMD",   "AMD",        "CPU / GPU / AI Chips",         "USA",    3.2),
+            ("QCOM",  "Qualcomm",   "Mobile SoC / 5G Modem",       "USA",    2.8),
+            ("AVGO",  "Broadcom",   "Networking / Wi-Fi Chips",     "USA",    3.8),
+            ("MRVL",  "Marvell",    "Data Center / 5G",            "USA",    1.2),
+            ("MCHP",  "Microchip",  "MCU / Analog",                "USA",    0.8),
+            ("SWKS",  "Skyworks",   "RF Chips for Mobile",         "USA",    0.7),
+            ("MPWR",  "Monolithic Power","Power Management",       "USA",    0.9),
+            ("AMAT",  "Applied Mat","(Equipment — see below)",     "USA",    None),
+            ("ARM",   "Arm Holdings","CPU Architecture Licensor",  "UK",     1.5),
+            ("MDIA",  "MediaTek",   "Mobile SoC (budget/mid)",     "Taiwan", 1.1),
+            ("BRCM",  "Broadcom",   "Networking ASIC",             "USA",    3.8),
+        ],
+    },
+    "idm_en": {
+        "label": "🏭 IDM (Integrated Device Manufacturers)",
+        "desc": "Design AND manufacture their own chips",
+        "color": "#00D4AA",
+        "companies": [
+            ("INTC",      "Intel",           "CPU / Data Center / Foundry", "USA",    1.8),
+            ("005930.KS", "Samsung",         "Logic / DRAM / NAND / Foundry","Korea",  4.5),
+            ("TXN",       "Texas Instruments","Analog / Embedded",          "USA",    1.6),
+            ("STM",       "STMicroelectronics","MCU / Power / Automotive",  "Europe", 0.7),
+            ("NXPI",      "NXP Semiconductors","Automotive / IoT",          "Netherlands",0.6),
+            ("ON",        "ON Semiconductor","Power / Automotive",          "USA",    0.5),
+            ("WOLF",      "Wolfspeed",       "Silicon Carbide (SiC) EV",    "USA",    0.2),
+        ],
+    },
+    "foundry_en": {
+        "label": "🔬 Pure-Play Foundries",
+        "desc": "Manufacture chips designed by others (contract fab)",
+        "color": "#AB63FA",
+        "companies": [
+            ("TSM",       "TSMC",            "World's #1 Foundry — 2nm/3nm/5nm", "Taiwan", 8.5),
+            ("GFS",       "GlobalFoundries", "Mature nodes, US/EU security supply", "USA", 0.9),
+            ("000660.KS", "SK Hynix",        "Memory + Foundry services",       "Korea", 1.2),
+            ("UMC",       "UMC",             "Mature node foundry",             "Taiwan", 0.4),
+            ("SMICY",     "SMIC",            "China's largest foundry (N+2 node)","China", 0.6),
+            ("VX",        "Semtech",         "Specialized analog foundry",      "USA",    0.2),
+        ],
+    },
+    "memory_en": {
+        "label": "💾 Memory Manufacturers",
+        "desc": "DRAM, NAND Flash, HBM production",
+        "color": "#64B5F6",
+        "companies": [
+            ("MU",        "Micron",          "DRAM / NAND / HBM — US memory giant", "USA",   0.9),
+            ("005930.KS", "Samsung Memory",  "World #1 DRAM + NAND + HBM3E",    "Korea",  4.5),
+            ("000660.KS", "SK Hynix",        "HBM3E leader for NVIDIA AI chips", "Korea",  1.2),
+            ("WDC",       "Western Digital", "NAND / SSD storage",              "USA",    0.5),
+            ("STX",       "Seagate",         "HDD + Enterprise storage",        "USA",    0.4),
+        ],
+    },
+    "equipment_en": {
+        "label": "⚙️ Semiconductor Equipment",
+        "desc": "Machines that make chips — critical chokepoint",
+        "color": "#FF6B6B",
+        "companies": [
+            ("ASML",  "ASML",              "EUV Lithography — sole global supplier", "Netherlands", 3.8),
+            ("AMAT",  "Applied Materials", "CVD/PVD/Etch/CMP tools",            "USA",  1.6),
+            ("LRCX",  "Lam Research",      "Etch & Deposition systems",          "USA",  1.1),
+            ("KLAC",  "KLA Corporation",   "Process Control & Inspection",       "USA",  0.9),
+            ("ONTO",  "Onto Innovation",   "Metrology & Inspection",             "USA",  0.2),
+            ("ACMR",  "ACM Research",      "Wafer Cleaning — China alt.",        "USA",  0.2),
+            ("TOELY", "Tokyo Electron",    "CVD / Etch / Coater systems",        "Japan",1.8),
+            ("HIMX",  "Himax",             "Display driver ICs",                 "Taiwan",0.1),
+            ("COHU",  "Cohu",              "Semiconductor test handlers",        "USA",  0.1),
+            ("FORM",  "FormFactor",        "Wafer probe cards",                  "USA",  0.1),
+            ("ENTG",  "Entegris",          "Materials delivery systems",         "USA",  0.3),
+            ("CCMP",  "CMC Materials",     "CMP slurries & pads",               "USA",  0.2),
+        ],
+    },
+    "materials_en": {
+        "label": "⛏️ Semiconductor Materials & Chemicals",
+        "desc": "Silicon wafers, gases, photoresist, specialty chemicals",
+        "color": "#FFD700",
+        "companies": [
+            ("SIEGY", "Shin-Etsu Chemical","#1 silicon wafer maker globally",   "Japan", 1.2),
+            ("SUMCF", "SUMCO",             "#2 silicon wafer maker",            "Japan", 0.3),
+            ("SOLV",  "Solvay",            "Ultra-pure chemicals for fabs",     "Belgium",0.2),
+            ("APD",   "Air Products",      "Ultra-pure gases (N2, H2, Ar, O2)", "USA",   0.6),
+            ("LIN",   "Linde",             "Specialty gases for semiconductor", "Ireland",1.8),
+            ("AZPN",  "AspenTech",         "Process optimization software",     "USA",   0.2),
+            ("CMC",   "CMC Materials",     "Polishing slurries (CMP)",          "USA",   0.2),
+            ("FSM",   "Ferroglobe",        "Silicon metal — solar/semi raw mat","Spain", 0.1),
+            ("TROX",  "Tronox",            "Titanium dioxide specialty chems",  "USA",   0.1),
+        ],
+    },
+    "packaging_en": {
+        "label": "📦 Advanced Packaging & Testing",
+        "desc": "OSAT, CoWoS, HBM stacking, chip-on-wafer",
+        "color": "#00BFA5",
+        "companies": [
+            ("ASX",   "ASE Technology",   "World's #1 OSAT packaging & test",  "Taiwan",0.5),
+            ("AMKR",  "Amkor Technology", "#2 OSAT — advanced packaging",       "USA",   0.3),
+            ("MX",    "Magnachip",        "Display driver, OLED IC",            "Korea", 0.1),
+            ("IMOS",  "ChipMOS",          "Memory test & packaging",            "Taiwan",0.1),
+            ("SPIL",  "SPIL",             "Siliconware Precision packaging",    "Taiwan",0.2),
+        ],
+    },
+    "eda_ip_en": {
+        "label": "🖥️ EDA Software & IP",
+        "desc": "Design tools and IP blocks that enable chip design",
+        "color": "#CE93D8",
+        "companies": [
+            ("SNPS",  "Synopsys",          "EDA tools + IP (acquired Ansys)",   "USA",   0.9),
+            ("CDNS",  "Cadence Design",    "EDA tools — PCB, IC, system sim",   "USA",   0.8),
+            ("MENT",  "Siemens EDA",       "Mentor Graphics — part of Siemens", "Germany",None),
+            ("ARM",   "Arm Holdings",      "CPU IP cores — licensed to all",    "UK",    1.5),
+            ("AMBA",  "Ambarella",         "Vision AI / SoC IP",                "USA",   0.2),
+            ("IMPV",  "Imperva",           "Security IP",                       "USA",   0.1),
+        ],
+    },
+}
 
-    # Korean version (same tickers, translated labels)
-    SEMI_UNIVERSE_KO = {
-        "fabless": {
-            "label": "🧠 팹리스 (설계 전문)",
-            "desc": "칩을 설계하되 생산은 파운드리에 외주",
-            "color": "#FFA500",
-        },
-        "idm": {
-            "label": "🏭 종합반도체기업 (IDM)",
-            "desc": "설계·생산을 모두 자체 수행",
-            "color": "#00D4AA",
-        },
-        "foundry": {
-            "label": "🔬 파운드리 (위탁생산)",
-            "desc": "다른 기업이 설계한 칩을 수탁 생산",
-            "color": "#AB63FA",
-        },
-        "memory": {
-            "label": "💾 메모리 반도체",
-            "desc": "DRAM, NAND 플래시, HBM 생산",
-            "color": "#64B5F6",
-        },
-        "equipment": {
-            "label": "⚙️ 반도체 장비",
-            "desc": "반도체 제조 장비 — 공급망의 핵심 병목",
-            "color": "#FF6B6B",
-        },
-        "materials": {
-            "label": "⛏️ 소재·화학·가스",
-            "desc": "실리콘 웨이퍼, 특수가스, 포토레지스트, 슬러리",
-            "color": "#FFD700",
-        },
-        "packaging": {
-            "label": "📦 패키징·테스트 (OSAT)",
-            "desc": "CoWoS, HBM 스태킹, 칩온웨이퍼 등 고급 패키징",
-            "color": "#00BFA5",
-        },
-        "eda_ip": {
-            "label": "🖥️ EDA 소프트웨어·IP",
-            "desc": "칩 설계를 가능하게 하는 툴 및 IP 블록",
-            "color": "#CE93D8",
-        },
-    }
+# Korean version (same tickers, translated labels)
+SEMI_UNIVERSE_KO = {
+    "fabless": {
+        "label": "🧠 팹리스 (설계 전문)",
+        "desc": "칩을 설계하되 생산은 파운드리에 외주",
+        "color": "#FFA500",
+    },
+    "idm": {
+        "label": "🏭 종합반도체기업 (IDM)",
+        "desc": "설계·생산을 모두 자체 수행",
+        "color": "#00D4AA",
+    },
+    "foundry": {
+        "label": "🔬 파운드리 (위탁생산)",
+        "desc": "다른 기업이 설계한 칩을 수탁 생산",
+        "color": "#AB63FA",
+    },
+    "memory": {
+        "label": "💾 메모리 반도체",
+        "desc": "DRAM, NAND 플래시, HBM 생산",
+        "color": "#64B5F6",
+    },
+    "equipment": {
+        "label": "⚙️ 반도체 장비",
+        "desc": "반도체 제조 장비 — 공급망의 핵심 병목",
+        "color": "#FF6B6B",
+    },
+    "materials": {
+        "label": "⛏️ 소재·화학·가스",
+        "desc": "실리콘 웨이퍼, 특수가스, 포토레지스트, 슬러리",
+        "color": "#FFD700",
+    },
+    "packaging": {
+        "label": "📦 패키징·테스트 (OSAT)",
+        "desc": "CoWoS, HBM 스태킹, 칩온웨이퍼 등 고급 패키징",
+        "color": "#00BFA5",
+    },
+    "eda_ip": {
+        "label": "🖥️ EDA 소프트웨어·IP",
+        "desc": "칩 설계를 가능하게 하는 툴 및 IP 블록",
+        "color": "#CE93D8",
+    },
+}
 
-    SEMI_SUPPLY_CHAIN_KO = [
-        ("⛏️ 소재·가스", "SIEGY, SUMCF, APD, Linde\n실리콘 웨이퍼, 특수가스"),
-        ("⚙️ 장비", "ASML, AMAT, LRCX, KLAC, TEL\nEUV 노광·식각·증착 장비"),
-        ("🔬 파운드리", "TSMC, 삼성, GlobalFoundries\n웨이퍼 위탁 생산"),
-        ("🧠 설계 (팹리스)", "NVDA, AMD, Qualcomm, Broadcom\n칩 아키텍처 설계"),
-        ("📦 패키징·테스트", "ASE, Amkor\n최종 패키징·검수"),
-        ("🖥️ 완제품", "서버, PC, 스마트폰, 자동차\n최종 고객"),
-    ]
+SEMI_SUPPLY_CHAIN_KO = [
+    ("⛏️ 소재·가스", "SIEGY, SUMCF, APD, Linde\n실리콘 웨이퍼, 특수가스"),
+    ("⚙️ 장비", "ASML, AMAT, LRCX, KLAC, TEL\nEUV 노광·식각·증착 장비"),
+    ("🔬 파운드리", "TSMC, 삼성, GlobalFoundries\n웨이퍼 위탁 생산"),
+    ("🧠 설계 (팹리스)", "NVDA, AMD, Qualcomm, Broadcom\n칩 아키텍처 설계"),
+    ("📦 패키징·테스트", "ASE, Amkor\n최종 패키징·검수"),
+    ("🖥️ 완제품", "서버, PC, 스마트폰, 자동차\n최종 고객"),
+]
 
-    SEMI_SUPPLY_CHAIN_EN = [
-        ("⛏️ Materials & Gases", "SIEGY, SUMCF, APD, Linde\nSilicon wafers, specialty gases"),
-        ("⚙️ Equipment", "ASML, AMAT, LRCX, KLAC, TEL\nEUV litho, etch, deposition tools"),
-        ("🔬 Foundry / Fab", "TSMC, Samsung, GlobalFoundries\nWafer contract manufacturing"),
-        ("🧠 Chip Design (Fabless)", "NVDA, AMD, Qualcomm, Broadcom\nChip architecture & design"),
-        ("📦 Packaging & Test", "ASE, Amkor\nFinal packaging & quality test"),
-        ("🖥️ End Products", "Servers, PCs, Smartphones, Autos\nEnd customers"),
-    ]
+SEMI_SUPPLY_CHAIN_EN = [
+    ("⛏️ Materials & Gases", "SIEGY, SUMCF, APD, Linde\nSilicon wafers, specialty gases"),
+    ("⚙️ Equipment", "ASML, AMAT, LRCX, KLAC, TEL\nEUV litho, etch, deposition tools"),
+    ("🔬 Foundry / Fab", "TSMC, Samsung, GlobalFoundries\nWafer contract manufacturing"),
+    ("🧠 Chip Design (Fabless)", "NVDA, AMD, Qualcomm, Broadcom\nChip architecture & design"),
+    ("📦 Packaging & Test", "ASE, Amkor\nFinal packaging & quality test"),
+    ("🖥️ End Products", "Servers, PCs, Smartphones, Autos\nEnd customers"),
+]
 
-    @st.cache_data(ttl=600)
-    def get_semi_prices(tickers: list) -> dict:
-        result = {}
-        for t in tickers:
-            try:
-                info_d = yf.Ticker(t).fast_info
-                price = getattr(info_d, "last_price", 0) or 0
-                prev  = getattr(info_d, "previous_close", price) or price
-                chg   = (price - prev) / prev * 100 if prev else 0
-                mktcap= getattr(info_d, "market_cap", 0) or 0
-                result[t] = {"price": price, "chg": chg, "mktcap": mktcap}
-            except Exception:
-                result[t] = {"price": 0, "chg": 0, "mktcap": 0}
-        return result
+@st.cache_data(ttl=600)
+def get_semi_prices(tickers: list) -> dict:
+    result = {}
+    for t in tickers:
+        try:
+            info_d = yf.Ticker(t).fast_info
+            price = getattr(info_d, "last_price", 0) or 0
+            prev  = getattr(info_d, "previous_close", price) or price
+            chg   = (price - prev) / prev * 100 if prev else 0
+            mktcap= getattr(info_d, "market_cap", 0) or 0
+            result[t] = {"price": price, "chg": chg, "mktcap": mktcap}
+        except Exception:
+            result[t] = {"price": 0, "chg": 0, "mktcap": 0}
+    return result
 
 if st.session_state.sidebar_view == "semi":
     lang_s = lang
