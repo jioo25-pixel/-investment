@@ -886,37 +886,49 @@ def is_high_impact(title: str, summary: str) -> bool:
 
 
 @st.cache_data(ttl=6*3600)
+@st.cache_data(ttl=6*3600)
 def fetch_market_digest() -> list:
     """
-    Fetch today's top market-moving headlines from general financial feeds.
+    Fetch today's top market-moving headlines.
+    Splits into 국내(Korean) and 해외(International) sources.
     Returns items sorted: high-impact first.
     """
-    _rss = [
-        ("https://feeds.reuters.com/reuters/businessNews",           "Reuters"),
-        ("https://www.cnbc.com/id/10001147/device/rss/rss.html",    "CNBC"),
-        ("https://feeds.marketwatch.com/marketwatch/topstories/",    "MarketWatch"),
-        ("https://finance.yahoo.com/news/rssindex",                  "Yahoo Finance"),
-        ("https://rss.nytimes.com/services/xml/rss/nyt/Business.xml","NYT Business"),
+    _rss_intl = [
+        ("https://feeds.reuters.com/reuters/businessNews",            "Reuters",      "intl"),
+        ("https://www.cnbc.com/id/10001147/device/rss/rss.html",     "CNBC",         "intl"),
+        ("https://feeds.marketwatch.com/marketwatch/topstories/",     "MarketWatch",  "intl"),
+        ("https://finance.yahoo.com/news/rssindex",                   "Yahoo Finance","intl"),
+        ("https://rss.nytimes.com/services/xml/rss/nyt/Business.xml", "NYT Business", "intl"),
     ]
-    articles, headers = [], {"User-Agent": "Mozilla/5.0 (compatible; MarketIntel/1.0)"}
-    for url, src in _rss:
+    _rss_ko = [
+        ("https://www.hankyung.com/feed/economy",          "한국경제",   "ko"),
+        ("https://www.mk.co.kr/rss/40300001/",             "매일경제",   "ko"),
+        ("https://rss.etnews.com/Section901.xml",          "전자신문",   "ko"),
+        ("https://rss.zdnet.co.kr/zdnet/rss/section/5/",  "ZDNet Korea","ko"),
+    ]
+    articles = []
+    headers  = {"User-Agent": "Mozilla/5.0 (compatible; MarketIntel/1.0)"}
+    for url, src, region in _rss_intl + _rss_ko:
         try:
             resp = requests.get(url, timeout=8, headers=headers)
             if resp.status_code != 200:
                 continue
             root = ET.fromstring(resp.content)
-            for item in root.findall(".//item")[:12]:
+            for item in root.findall(".//item")[:10]:
                 title   = re.sub(r"<[^>]+>", "", item.findtext("title",       "")).strip()
-                desc    = re.sub(r"<[^>]+>", "", item.findtext("description", ""))[:220].strip()
-                link    = item.findtext("link",    "").strip()
+                desc    = re.sub(r"<[^>]+>", "", item.findtext("description", ""))[:300].strip()
+                link    = item.findtext("link", "").strip()
                 pubdate = item.findtext("pubDate", "")[:25]
                 if not title:
                     continue
                 articles.append({
-                    "title": title, "summary": desc,
-                    "link":  link,  "published": pubdate,
-                    "source": src,
-                    "impact": is_high_impact(title, desc),
+                    "title":     title,
+                    "summary":   desc,
+                    "link":      link,
+                    "published": pubdate,
+                    "source":    src,
+                    "region":    region,
+                    "impact":    is_high_impact(title, desc),
                 })
         except Exception:
             continue
@@ -928,9 +940,8 @@ def fetch_market_digest() -> list:
             seen.add(key)
             unique.append(art)
 
-    # High-impact first, then rest
     unique.sort(key=lambda x: (0 if x["impact"] else 1))
-    return unique[:20]
+    return unique[:30]
 
 
 _TOP10 = [
@@ -2801,19 +2812,55 @@ if st.session_state.home_mode and not st.session_state.show_ranker and st.sessio
     st.markdown(f"<div class='section-header' style='font-size:1.2rem;margin-bottom:12px;'>{_news_hdr}</div>", unsafe_allow_html=True)
     with st.spinner("뉴스 로딩 중..." if lang == "ko" else "Loading news..."):
         _home_news = fetch_market_digest()
-    if _home_news:
-        for _art in _home_news[:10]:
-            _title = _art.get("title", "")
-            _src   = _art.get("source", "")
+
+    _num_emojis = ["1️⃣","2️⃣","3️⃣","4️⃣","5️⃣","6️⃣","7️⃣","8️⃣","9️⃣","🔟"]
+
+    def _render_news_section(articles, section_label, emoji_offset=0):
+        if not articles:
+            return
+        st.markdown(
+            f"<div style='font-size:1rem;font-weight:800;color:#8B9DB0;margin:16px 0 10px 0;"
+            f"text-transform:uppercase;letter-spacing:1px;'>{section_label}</div>",
+            unsafe_allow_html=True
+        )
+        for _ni, _art in enumerate(articles):
+            _title = _art.get("title","")
+            _desc  = _art.get("summary","")
+            _link  = _art.get("link","#")
+            _src   = _art.get("source","")
             _pub   = (_art.get("published","") or "")[:10]
             _imp   = _issue_impact(_title, lang)
-            _high  = is_high_impact(_title, _art.get("summary", ""))
-            _badge = "<span style='background:#FF4040;color:#fff;border-radius:4px;padding:1px 6px;font-size:0.7rem;margin-right:6px;'>🔥 HOT</span>" if _high else ""
-            st.markdown(f"""<div style='background:#111528;border:1px solid #1E2140;border-radius:10px;padding:12px 16px;margin-bottom:10px;'>
-<div style='font-size:0.9rem;font-weight:600;color:#EAEAEA;margin-bottom:6px;'>{_badge}{_title}</div>
-<div style='font-size:0.75rem;color:#4A5568;margin-bottom:6px;'>{_src}{" · " + _pub if _pub else ""}</div>
-<div style='font-size:0.82rem;color:#FFD700;border-top:1px solid #1E2140;padding-top:6px;'>{_imp}</div>
+            _high  = _art.get("impact", False)
+            _enum  = _num_emojis[(_ni + emoji_offset) % 10]
+            _hot   = ("<span style='background:#FF4040;color:#fff;border-radius:4px;"
+                      "padding:1px 7px;font-size:0.68rem;font-weight:700;margin-left:6px;"
+                      "vertical-align:middle;'>HOT</span>" if _high else "")
+            # desc truncated to ~200 chars
+            _desc_short = (_desc[:200] + "...") if len(_desc) > 200 else _desc
+            st.markdown(f"""
+<div style='background:#111528;border:1px solid #1E2140;border-radius:12px;
+            padding:16px 18px;margin-bottom:12px;'>
+  <div style='font-size:1rem;font-weight:700;color:#EAEAEA;margin-bottom:8px;line-height:1.4;'>
+    {_enum} {_title}{_hot}
+  </div>
+  <div style='font-size:0.82rem;color:#8B9DB0;line-height:1.6;margin-bottom:10px;'>
+    {_desc_short}
+  </div>
+  <div style='font-size:0.83rem;color:#FFD700;background:rgba(255,215,0,0.07);
+              border-radius:6px;padding:7px 10px;margin-bottom:10px;'>
+    📌 <b>주가 영향:</b> {_imp}
+  </div>
+  <div style='display:flex;align-items:center;justify-content:space-between;'>
+    <span style='font-size:0.72rem;color:#4A5568;'>{_src}{" · " + _pub if _pub else ""}</span>
+    {"<a href='" + _link + "' target='_blank' style='font-size:0.78rem;color:#4FC3F7;text-decoration:none;font-weight:600;'>자세히 보기 👉</a>" if _link and _link != "#" else ""}
+  </div>
 </div>""", unsafe_allow_html=True)
+
+    if _home_news:
+        _ko_news   = [a for a in _home_news if a.get("region") == "ko"][:8]
+        _intl_news = [a for a in _home_news if a.get("region") != "ko"][:8]
+        _render_news_section(_ko_news,   "🇰🇷 국내 주요 이슈" if lang=="ko" else "🇰🇷 Korea", 0)
+        _render_news_section(_intl_news, "🌐 해외 주요 이슈" if lang=="ko" else "🌐 International", len(_ko_news))
     else:
         st.info("뉴스를 불러오는 중입니다..." if lang == "ko" else "Loading news...")
 
