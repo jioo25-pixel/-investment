@@ -992,15 +992,47 @@ _RANKER_TICKERS = [
 
 
 @st.cache_data(ttl=3600)
+@st.cache_data(ttl=1800)
+def _fetch_macro_snapshot() -> dict:
+    """Fetch current VIX and 10Y yield for macro-adjusted ranking."""
+    snap = {"vix": 20.0, "tnx": 4.5}
+    try:
+        for sym, key in [("^VIX", "vix"), ("^TNX", "tnx")]:
+            df = yf.download(sym, period="5d", progress=False, auto_adjust=True)
+            if not df.empty:
+                c = df["Close"]
+                if c.ndim == 2: c = c.iloc[:, 0]
+                snap[key] = float(c.dropna().iloc[-1])
+    except Exception:
+        pass
+    return snap
+
+
 def compute_stock_rankings() -> list:
+    """Improved multi-factor 12M return predictor — bubble-aware & macro-adjusted.
+
+    Factors:
+      40% — Long-term log-linear regression trend (1Y).
+      25% — Risk-adjusted (Sharpe-like) 3M momentum: divides raw momentum
+             by realised vol so high-vol spikes contribute less.
+      20% — Robust 6M median daily return extrapolated to 12M.
+      15% — MA200 mean-reversion component.
+
+    Adjustments applied:
+      Bubble discount : if 3M gain >> annual vol, dampen the momentum signal.
+      RSI dampening   : RSI>70 reduces predicted return toward MA200.
+      Macro discount  : VIX>25 or 10Y>4.8% applies a market-wide haircut.
     """
-    Compute a fast momentum-based predicted 12M return for a watchlist.
-    Uses:
-      - 12M linear regression slope (trend)
-      - 3M momentum (recent acceleration)
-      - Mean-reversion vs 200-day MA
-    Returns list of dicts sorted by predicted_return desc.
-    """
+    macro = _fetch_macro_snapshot()
+    vix   = macro["vix"]
+    tnx   = macro["tnx"]
+    # Global macro haircut: high-stress environment
+    macro_mult = 1.0
+    if vix > 30 or tnx > 5.0:
+        macro_mult = 0.80
+    elif vix > 25 or tnx > 4.8:
+        macro_mult = 0.92
+
     results = []
     for sym, name, sector in _RANKER_TICKERS:
         try:
@@ -1012,40 +1044,96 @@ def compute_stock_rankings() -> list:
             if close.ndim == 2:
                 close = close.iloc[:, 0]
             prices = close.dropna().astype(float).values
-            n = len(prices)
+            n   = len(prices)
             cur = float(prices[-1])
 
-            # --- trend (linear regression annualised slope) ---
-            x = np.arange(n)
-            slope = np.polyfit(x, np.log(prices), 1)[0]   # daily log-return trend
-            trend_ret = float(np.exp(slope * 252) - 1) * 100   # annualised %
+            # ── Vol (annualised) ──
+            daily_log_rets = np.diff(np.log(prices[-min(252, n):]))
+            vol_ann = float(np.std(daily_log_rets) * np.sqrt(252) * 100)
 
-            # --- 3-month momentum ---
-            mom_3m = float((prices[-1] / prices[max(0, n-63)] - 1) * 100)
+            # ── Factor 1: 1Y log-linear trend ──
+            x       = np.arange(n)
+            slope1  = np.polyfit(x, np.log(prices), 1)[0]
+            trend_ret = float((np.exp(slope1 * 252) - 1) * 100)
 
-            # --- mean-reversion component ---
+            # ── Factor 2: Sharpe-adjusted 3M momentum ──
+            rets_3m  = np.diff(np.log(prices[-min(63, n):]))
+            sharpe3m = float(np.mean(rets_3m) / (np.std(rets_3m) + 1e-8) * np.sqrt(252))
+            # Convert to %-equivalent, cap at ±3σ of historical norms
+            mom_quality = float(np.clip(sharpe3m, -3, 3) * (vol_ann / np.sqrt(252 / 63) + 1e-8))
+            mom_quality = float(np.clip(mom_quality, -60, 60))
+
+            # ── Factor 3: Robust 6M median daily return → 12M projection ──
+            rets_6m    = np.diff(np.log(prices[-min(126, n):]))
+            med_ret    = float(np.median(rets_6m))
+            robust_ann = float((np.exp(med_ret * 252) - 1) * 100)
+            robust_ann = float(np.clip(robust_ann, -80, 200))   # sanity cap
+
+            # ── Factor 4: Mean reversion vs MA200 ──
             ma200 = float(np.mean(prices[-min(200, n):]))
-            rev   = float((ma200 - cur) / cur * 100 * 0.3)   # 30% pull toward MA
+            rev   = float((ma200 - cur) / cur * 100 * 0.25)     # 25% pull toward MA
 
-            # --- ensemble predicted 12M return ---
-            pred_ret = trend_ret * 0.5 + mom_3m * 0.3 + rev * 0.2
+            # ── Ensemble (before adjustments) ──
+            pred_ret = (trend_ret * 0.40
+                       + mom_quality * 0.25
+                       + robust_ann  * 0.20
+                       + rev         * 0.15)
 
-            # --- 1D change ---
+            # ── Bubble discount ──
+            mom_3m_raw = float((prices[-1] / prices[max(0, n - 63)] - 1) * 100)
+            b_disc     = _bubble_discount(mom_3m_raw, vol_ann)
+            if pred_ret > 0 and b_disc < 1.0:
+                excess   = pred_ret
+                pred_ret = excess * b_disc
+
+            # ── RSI dampening ──
+            rsi_val = _compute_rsi_raw(prices)
+            if rsi_val > 80:
+                pull = 0.35
+            elif rsi_val > 70:
+                pull = 0.18
+            elif rsi_val < 25:
+                pull = -0.12   # oversold slight upside
+            else:
+                pull = 0.0
+            if pull != 0.0:
+                ma200_chg = (ma200 / cur - 1) * 100
+                pred_ret  = pred_ret + pull * (ma200_chg - pred_ret)
+
+            # ── Macro adjustment ──
+            pred_ret *= macro_mult
+
+            # ── 1D change ──
             chg_1d = float((prices[-1] / prices[-2] - 1) * 100) if n >= 2 else 0.0
 
-            # --- annualised vol ---
-            vol = float(np.std(np.diff(np.log(prices[-min(252,n):]))) * np.sqrt(252) * 100)
+            # Signal label
+            if rsi_val > 75:
+                signal = "⚠️ 과매수" if True else "⚠️ Overbought"
+            elif b_disc < 0.60:
+                signal = "🫧 급등주의"
+            elif pred_ret > 20:
+                signal = "🟢 강세"
+            elif pred_ret > 5:
+                signal = "🔵 완만한 상승"
+            elif pred_ret < -10:
+                signal = "🔴 약세"
+            else:
+                signal = "⚪ 중립"
 
             results.append({
-                "ticker":     sym,
-                "name":       name,
-                "sector":     sector,
-                "price":      cur,
-                "chg_1d":     chg_1d,
-                "pred_12m":   round(pred_ret, 1),
-                "mom_3m":     round(mom_3m, 1),
-                "trend_ann":  round(trend_ret, 1),
-                "vol_ann":    round(vol, 1),
+                "ticker":      sym,
+                "name":        name,
+                "sector":      sector,
+                "price":       cur,
+                "chg_1d":      chg_1d,
+                "pred_12m":    round(pred_ret, 1),
+                "mom_3m":      round(mom_3m_raw, 1),
+                "trend_ann":   round(trend_ret, 1),
+                "vol_ann":     round(vol_ann, 1),
+                "rsi":         round(rsi_val, 1),
+                "bubble_disc": round(b_disc, 2),
+                "signal":      signal,
+                "macro_env":   f"VIX {vix:.0f} | 10Y {tnx:.2f}%",
             })
         except Exception:
             continue
@@ -1484,8 +1572,49 @@ def compute_indicators(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 # ─── PREDICTION ENGINE ────────────────────────────────────────────────────────
+def _compute_rsi_raw(prices: np.ndarray, period: int = 14) -> float:
+    """Fast RSI computation from price array."""
+    if len(prices) < period + 1:
+        return 50.0
+    deltas = np.diff(prices[-(period + 1):])
+    gains = np.where(deltas > 0, deltas, 0.0)
+    losses = np.where(deltas < 0, -deltas, 0.0)
+    avg_gain = np.mean(gains) + 1e-10
+    avg_loss = np.mean(losses) + 1e-10
+    return float(100 - 100 / (1 + avg_gain / avg_loss))
+
+
+def _bubble_discount(mom_pct: float, vol_annual: float) -> float:
+    """Return a [0,1] multiplier that discounts bubble-like momentum.
+
+    If 3M return is far larger than expected given annual vol, it's likely
+    a transient spike that will partly revert.  We leave slow-and-steady
+    gains untouched and dampen only the excess.
+    """
+    expected_3m = vol_annual * np.sqrt(63 / 252)   # 1σ 3-month move
+    ratio = abs(mom_pct) / (expected_3m + 1e-8)
+    if ratio <= 1.0:
+        return 1.0
+    if ratio <= 1.5:
+        return 0.85
+    if ratio <= 2.5:
+        return 0.60
+    return 0.35   # extreme spike: very heavy discount
+
+
 def predict_prices(df: pd.DataFrame, horizons_days: list) -> dict:
-    """Multi-horizon price prediction using ensemble of methods."""
+    """Multi-horizon price prediction — bubble-aware, RSI-dampened ensemble.
+
+    Method 1 (40%): Long-term linear regression trend on log-prices.
+    Method 2 (30%): Robust 6-month median-daily-return trend
+                    (replaces exponential weighting; less sensitive to spikes).
+    Method 3 (30%): MA200 mean-reversion pull.
+
+    Additional adjustments applied after ensemble:
+    - Bubble discount: 3M momentum >> annual vol → dampen upside.
+    - RSI dampening: RSI > 70 shifts prediction toward MA200 (reversion).
+    - Hard cap: predicted change capped at ±80% for any horizon.
+    """
     if df.empty or len(df) < 60:
         return {}
 
@@ -1496,52 +1625,282 @@ def predict_prices(df: pd.DataFrame, horizons_days: list) -> dict:
     prices = close.dropna().values
     n = len(prices)
 
-    results = {}
+    vol_daily  = float(np.std(np.diff(np.log(prices[-min(252, n):]))))
+    vol_annual = vol_daily * np.sqrt(252) * 100
 
+    # Bubble and RSI adjustments (computed once, applied per horizon)
+    mom_3m     = float((prices[-1] / prices[max(0, n - 63)] - 1) * 100)
+    b_disc     = _bubble_discount(mom_3m, vol_annual)
+    rsi_val    = _compute_rsi_raw(prices)
+    ma200      = float(np.mean(prices[-min(200, n):]))
+    cur        = float(prices[-1])
+
+    # RSI factor: how strongly to pull prediction toward MA200
+    if rsi_val > 80:
+        rsi_pull = 0.40   # strongly overbought → heavy reversion pull
+    elif rsi_val > 70:
+        rsi_pull = 0.20
+    elif rsi_val < 25:
+        rsi_pull = -0.15  # oversold → slight upside bias
+    else:
+        rsi_pull = 0.0
+
+    # Method 1: linear regression on log(price) over full history
+    x1    = np.arange(n)
+    slope1 = np.polyfit(x1, np.log(prices), 1)[0]
+
+    # Method 2: robust trend — use median of 6-month daily log-returns
+    recent6m   = prices[-min(126, n):]
+    log_rets6m = np.diff(np.log(recent6m))
+    med_return = float(np.median(log_rets6m))   # median vs mean → spike-resistant
+
+    results = {}
     for h in horizons_days:
         try:
-            # --- Method 1: Linear trend + momentum ---
-            x = np.arange(n).reshape(-1, 1)
-            y = prices
-            lr = LinearRegression().fit(x, y)
-            trend_pred = lr.predict([[n + h]])[0]
+            # Method 1 forecast
+            trend_pred = cur * np.exp(slope1 * h)
 
-            # --- Method 2: Exponential weighted recent trend ---
-            recent = prices[-min(90, n):]
-            weights = np.exp(np.linspace(0, 1, len(recent)))
-            weights /= weights.sum()
-            recent_returns = np.diff(np.log(recent))
-            avg_return = np.average(recent_returns, weights=weights[1:])
-            exp_pred = prices[-1] * np.exp(avg_return * h)
+            # Method 2 forecast (robust median trend)
+            robust_pred = cur * np.exp(med_return * h)
 
-            # --- Method 3: Mean reversion (long-run) ---
-            ma200 = np.mean(prices[-min(200, n):])
-            reversion_strength = 0.3 * (h / 252)
-            mr_pred = prices[-1] + reversion_strength * (ma200 - prices[-1]) + \
-                      avg_return * h * prices[-1]
+            # Method 3 forecast (mean reversion)
+            rev_strength = 0.25 * (h / 252)
+            mr_pred = cur + rev_strength * (ma200 - cur) + med_return * h * cur
 
-            # Ensemble base
-            base = np.mean([trend_pred, exp_pred, mr_pred])
+            # Ensemble (40 / 30 / 30)
+            base = trend_pred * 0.40 + robust_pred * 0.30 + mr_pred * 0.30
 
-            # Volatility for confidence bands
-            vol_daily = np.std(np.diff(np.log(prices[-min(252, n):])))
-            vol_horizon = vol_daily * np.sqrt(h)
+            # Apply bubble discount to upside portion
+            if base > cur and b_disc < 1.0:
+                excess = base - cur
+                base   = cur + excess * b_disc
 
-            bull = base * np.exp(vol_horizon * 1.28)   # 90th pct
-            bear = base * np.exp(-vol_horizon * 1.28)  # 10th pct
+            # Apply RSI mean-reversion pull
+            if rsi_pull != 0.0:
+                base = base + rsi_pull * (ma200 - base) * (h / 252)
+
+            # Hard cap ±80%
+            max_change = cur * 0.80
+            base = float(np.clip(base, cur - max_change, cur + max_change))
+
+            # Confidence bands — widen slightly for bubbly stocks
+            vol_horizon = vol_daily * np.sqrt(h) * (1.0 + (1.0 - b_disc) * 0.5)
+            bull = base * np.exp( vol_horizon * 1.28)
+            bear = base * np.exp(-vol_horizon * 1.28)
 
             results[h] = {
-                "base": round(base, 2),
-                "bull": round(bull, 2),
-                "bear": round(bear, 2),
-                "current": round(float(prices[-1]), 2),
-                "change_pct": round((base / prices[-1] - 1) * 100, 2),
-                "vol_annual": round(vol_daily * np.sqrt(252) * 100, 2),
+                "base":        round(base, 2),
+                "bull":        round(bull, 2),
+                "bear":        round(bear, 2),
+                "current":     round(cur, 2),
+                "change_pct":  round((base / cur - 1) * 100, 2),
+                "vol_annual":  round(vol_annual, 2),
+                "rsi":         round(rsi_val, 1),
+                "bubble_disc": round(b_disc, 2),
             }
         except Exception:
             continue
 
     return results
+
+
+@st.cache_data(ttl=3600)
+def fetch_macro_history_for_chart(ticker_sym: str) -> dict:
+    """Fetch 1-year history of the target stock plus key macro proxies.
+
+    Returns dict of DataFrames keyed by symbol.
+    """
+    symbols = {
+        ticker_sym: "Stock",
+        "^TNX":  "US 10Y Yield",
+        "^VIX":  "VIX",
+        "DX-Y.NYB": "USD Index",
+        "GC=F":  "Gold",
+    }
+    data = {}
+    for sym, label in symbols.items():
+        try:
+            df = yf.download(sym, period="1y", interval="1d",
+                             progress=False, auto_adjust=True)
+            if not df.empty:
+                close = df["Close"]
+                if close.ndim == 2:
+                    close = close.iloc[:, 0]
+                data[sym] = {"series": close.dropna().astype(float), "label": label}
+        except Exception:
+            pass
+    return data
+
+
+def build_macro_scenario_chart(ticker_sym: str, df_stock: pd.DataFrame,
+                                predictions: dict, lang: str) -> go.Figure:
+    """Build a macro-adjusted scenario chart overlaying macro drivers.
+
+    Top panel: stock price + 3 scenario paths (bull/base/bear) with macro
+    adjustment layer.
+    Bottom panel: normalised macro indicators (VIX, 10Y yield, USD index).
+    """
+    macro_hist = fetch_macro_history_for_chart(ticker_sym)
+
+    close = df_stock["Close"]
+    if close.ndim == 2:
+        close = close.iloc[:, 0]
+    close = close.dropna().astype(float)
+    prices = close.values
+    n = len(prices)
+
+    # Current macro state for adjustment commentary
+    vix_cur  = float(macro_hist.get("^VIX",  {}).get("series", pd.Series([20])).iloc[-1])
+    tnx_cur  = float(macro_hist.get("^TNX",  {}).get("series", pd.Series([4.5])).iloc[-1])
+    dxy_cur  = float(macro_hist.get("DX-Y.NYB", {}).get("series", pd.Series([103])).iloc[-1])
+
+    # Macro adjustment multipliers for bull/base/bear
+    # High VIX → widen bear, high yield → discount growth, strong USD → mixed
+    vix_factor  = 1.0 + max(0, (vix_cur - 20) / 100)   # >20 widens bear band
+    rate_factor = 1.0 - max(0, (tnx_cur - 4.0) * 0.03)  # each 1% above 4% = -3% adj
+
+    # Determine scenario label suffixes
+    if vix_cur > 25 or tnx_cur > 4.8:
+        env_label = ("⚠️ 불안정 (고VIX·고금리)" if lang == "ko"
+                     else "⚠️ Unstable (High VIX & Rates)")
+        env_color = "#FF8C00"
+    elif vix_cur < 16 and tnx_cur < 4.2:
+        env_label = ("✅ 우호적 (저VIX·저금리)" if lang == "ko"
+                     else "✅ Favorable (Low VIX & Rates)")
+        env_color = "#00D4AA"
+    else:
+        env_label = ("🔄 중립" if lang == "ko" else "🔄 Neutral")
+        env_color = "#8B9DB0"
+
+    fig = make_subplots(
+        rows=2, cols=1,
+        row_heights=[0.68, 0.32],
+        shared_xaxes=True,
+        vertical_spacing=0.06,
+        subplot_titles=[
+            ("주가 + 거시경제 반영 시나리오 예측" if lang == "ko"
+             else "Price + Macro-Adjusted Scenario Forecast"),
+            ("거시경제 지표 (정규화)" if lang == "ko"
+             else "Macro Indicators (Normalised)"),
+        ],
+    )
+
+    # --- Historical price ---
+    fig.add_trace(go.Scatter(
+        x=close.index, y=close.values,
+        mode="lines", name=("주가" if lang == "ko" else "Price"),
+        line=dict(color="#4FC3F7", width=1.5),
+    ), row=1, col=1)
+
+    # --- Forecast paths (from last price forward) ---
+    if predictions:
+        last_date = close.index[-1]
+        cur_price = float(prices[-1])
+
+        # horizon → calendar days (approx 1 trading day ≈ 1.4 calendar days)
+        def _td(h): return pd.Timedelta(days=int(h * 1.4))
+
+        sorted_h = sorted(predictions.keys())
+        # Build scenario arrays
+        base_pts  = [(last_date, cur_price)]
+        bull_pts  = [(last_date, cur_price)]
+        bear_pts  = [(last_date, cur_price)]
+
+        for h in sorted_h:
+            p = predictions[h]
+            bd = last_date + _td(h)
+            # Apply macro adjustment to forecast
+            b_base = p["base"] * rate_factor
+            b_bull = p["bull"] * rate_factor * (1 / vix_factor)
+            b_bear = p["bear"] * rate_factor * vix_factor
+            base_pts.append((bd, b_base))
+            bull_pts.append((bd, b_bull))
+            bear_pts.append((bd, b_bear))
+
+        def unzip(pts): return zip(*pts)
+
+        bx, by = unzip(base_pts)
+        ux, uy = unzip(bull_pts)
+        dx, dy = unzip(bear_pts)
+
+        fig.add_trace(go.Scatter(
+            x=list(ux), y=list(uy),
+            mode="lines+markers",
+            name=("강세 시나리오" if lang == "ko" else "Bull Scenario"),
+            line=dict(color="#FF4040", width=1.5, dash="dot"),
+            marker=dict(size=6),
+        ), row=1, col=1)
+        fig.add_trace(go.Scatter(
+            x=list(bx), y=list(by),
+            mode="lines+markers",
+            name=("기본 시나리오" if lang == "ko" else "Base Scenario"),
+            line=dict(color="#FFD700", width=2),
+            marker=dict(size=7),
+        ), row=1, col=1)
+        fig.add_trace(go.Scatter(
+            x=list(dx), y=list(dy),
+            mode="lines+markers",
+            name=("약세 시나리오" if lang == "ko" else "Bear Scenario"),
+            line=dict(color="#4488FF", width=1.5, dash="dot"),
+            marker=dict(size=6),
+        ), row=1, col=1)
+
+        # Shaded band between bull and bear
+        fig.add_trace(go.Scatter(
+            x=list(ux) + list(dx)[::-1],
+            y=list(uy) + list(dy)[::-1],
+            fill="toself", fillcolor="rgba(255,215,0,0.07)",
+            line=dict(color="rgba(0,0,0,0)"),
+            name=("불확실성 구간" if lang == "ko" else "Uncertainty Band"),
+            showlegend=True,
+        ), row=1, col=1)
+
+    # Env label annotation
+    fig.add_annotation(
+        x=0.01, y=0.99, xref="paper", yref="paper",
+        text=f"<b>{env_label}</b>  VIX: {vix_cur:.1f}  |  10Y: {tnx_cur:.2f}%  |  DXY: {dxy_cur:.1f}",
+        showarrow=False, font=dict(size=11, color=env_color),
+        align="left", bgcolor="rgba(10,14,39,0.75)", borderpad=4,
+    )
+
+    # --- Bottom panel: normalised macro indicators ---
+    macro_colors = {"^VIX": "#FF8C00", "^TNX": "#00D4AA", "DX-Y.NYB": "#B39DDB", "GC=F": "#FFD700"}
+    macro_names_ko = {"^VIX": "VIX (공포)", "^TNX": "10Y 국채금리", "DX-Y.NYB": "달러인덱스", "GC=F": "금"}
+    macro_names_en = {"^VIX": "VIX", "^TNX": "US 10Y Yield", "DX-Y.NYB": "USD Index", "GC=F": "Gold"}
+
+    for sym, info in macro_hist.items():
+        if sym == ticker_sym:
+            continue
+        s = info["series"]
+        if len(s) < 2:
+            continue
+        # Normalise to 0–100 scale for comparison
+        s_min, s_max = float(s.min()), float(s.max())
+        if s_max == s_min:
+            continue
+        s_norm = (s - s_min) / (s_max - s_min) * 100
+        name_map = macro_names_ko if lang == "ko" else macro_names_en
+        fig.add_trace(go.Scatter(
+            x=s_norm.index, y=s_norm.values,
+            mode="lines",
+            name=name_map.get(sym, sym),
+            line=dict(color=macro_colors.get(sym, "#8B9DB0"), width=1.2),
+        ), row=2, col=1)
+
+    fig.update_layout(
+        height=620,
+        paper_bgcolor="#0A0E27",
+        plot_bgcolor="#0A0E27",
+        font=dict(color="#E0E0E0", family="Inter, sans-serif", size=11),
+        legend=dict(orientation="h", x=0, y=-0.08, bgcolor="rgba(0,0,0,0)"),
+        margin=dict(l=10, r=10, t=50, b=10),
+        hovermode="x unified",
+    )
+    for row in [1, 2]:
+        fig.update_xaxes(gridcolor="#1E2140", row=row, col=1)
+        fig.update_yaxes(gridcolor="#1E2140", row=row, col=1)
+
+    return fig
 
 def get_sentiment(df: pd.DataFrame) -> dict:
     """Compute market sentiment from technical indicators."""
@@ -2502,23 +2861,51 @@ if _show_tabs:
                     </div>
                     """, unsafe_allow_html=True)
 
+            # ── Macro-adjusted scenario chart ─────────────────────────────
+            st.markdown("<br>", unsafe_allow_html=True)
+            _macro_hdr = ("📊 거시경제 반영 시나리오 분석" if lang == "ko"
+                          else "📊 Macro-Adjusted Scenario Analysis")
+            st.markdown(f"<div class='section-header'>{_macro_hdr}</div>",
+                        unsafe_allow_html=True)
+            if lang == "ko":
+                st.markdown(
+                    "<small style='color:#8B9DB0;'>"
+                    "현재 VIX·10년 국채금리·달러인덱스를 반영하여 강세/기본/약세 3가지 시나리오를 보여줍니다. "
+                    "하단 패널은 거시경제 지표의 1년 추이(정규화)입니다."
+                    "</small>", unsafe_allow_html=True)
+            else:
+                st.markdown(
+                    "<small style='color:#8B9DB0;'>"
+                    "Scenarios adjust for current VIX, 10Y yield, and USD index. "
+                    "Bottom panel shows 1-year normalised macro indicator trends."
+                    "</small>", unsafe_allow_html=True)
+            with st.spinner(T("loading")):
+                _macro_fig = build_macro_scenario_chart(ticker, df_5y, predictions, lang)
+            st.plotly_chart(_macro_fig, use_container_width=True)
+
             # Prediction methodology note
             st.markdown("<br>", unsafe_allow_html=True)
             if lang == "ko":
                 methodology = """
-                **예측 방법론:** 3가지 통계 모델의 앙상블을 사용합니다:
-                - **선형 추세 회귀**: 장기 가격 추세 포착
-                - **지수 가중 모멘텀**: 최근 수익률에 더 높은 가중치 부여
-                - **평균 회귀 모델**: 200일 이동평균 대비 과도한 편차 조정
-                - **신뢰 구간**: 역사적 변동성을 기반으로 강세/약세 시나리오 계산 (90% 신뢰구간)
+                **예측 방법론 (개선됨):** 4가지 통계 모델의 앙상블을 사용합니다:
+                - **선형 추세 회귀 (40%)**: 1년 로그가격 기울기 → 장기 추세 포착
+                - **리스크 조정 모멘텀 (25%)**: 샤프비율 기반 — 변동성이 큰 급등은 자동 감점
+                - **강건 중앙값 추세 (20%)**: 6개월 일일 수익률의 중앙값 → 단기 스파이크 무시
+                - **평균 회귀 (15%)**: MA200 대비 편차 조정
+                - **버블 보정**: 3M 수익률 > 연간 변동성 초과 시 모멘텀 할인
+                - **RSI 과매수 보정**: RSI>70 시 예측치를 MA200 방향으로 조정
+                - **거시경제 조정**: VIX·금리 환경에 따라 시나리오 경로 조정
                 """
             else:
                 methodology = """
-                **Prediction Methodology:** Ensemble of 3 statistical models:
-                - **Linear Trend Regression**: Captures long-term price trajectory
-                - **Exponential Weighted Momentum**: Higher weight on recent returns
-                - **Mean Reversion Model**: Adjusts for excessive deviation from 200-day MA
-                - **Confidence Bands**: Bull/Bear scenarios based on historical volatility (90% CI)
+                **Prediction Methodology (Improved):** Ensemble of 4 models:
+                - **Log-linear trend regression (40%)**: 1Y slope on log-prices
+                - **Risk-adjusted momentum (25%)**: Sharpe-ratio based — volatile spikes auto-discounted
+                - **Robust median trend (20%)**: 6M median daily return → spike-resistant
+                - **Mean reversion (15%)**: Adjusts for deviation from MA200
+                - **Bubble discount**: 3M gain >> annual vol → momentum dampened
+                - **RSI overbought correction**: RSI>70 pulls prediction toward MA200
+                - **Macro adjustment**: Scenario paths shift with VIX & rate environment
                 """
             st.info(methodology)
 
@@ -3718,11 +4105,21 @@ if st.session_state.show_ranker:
             _bar_w  = min(abs(_pred), 80)
             _bar_col= "#FF4040" if _pred >= 0 else "#4488FF"
             _med    = _medal[rank_i] if rank_i < len(_medal) else f"#{rank_i+1}"
-            _sig    = ("강매수" if _pred > 20 else "매수" if _pred > 5 else
-                       "중립" if _pred > -5 else "매도" if _pred > -20 else "강매도") if _r_lang=="ko" else \
-                      ("Strong Buy" if _pred > 20 else "Buy" if _pred > 5 else
-                       "Neutral" if _pred > -5 else "Sell" if _pred > -20 else "Strong Sell")
+            _rsi_v  = row.get("rsi", 50.0)
+            _bdisc  = row.get("bubble_disc", 1.0)
+            _sig    = row.get("signal") or (
+                ("강매수" if _pred > 20 else "매수" if _pred > 5 else
+                 "중립" if _pred > -5 else "매도" if _pred > -20 else "강매도") if _r_lang=="ko" else
+                ("Strong Buy" if _pred > 20 else "Buy" if _pred > 5 else
+                 "Neutral" if _pred > -5 else "Sell" if _pred > -20 else "Strong Sell")
+            )
             _sig_color = ("#FF4040" if _pred > 5 else "#4488FF" if _pred < -5 else "#FFA500")
+            # Bubble / overbought warning badge
+            _warn = ""
+            if _bdisc < 0.60:
+                _warn = "🫧 " + ("급등 할인 적용" if _r_lang=="ko" else "Bubble discounted")
+            elif _rsi_v > 75:
+                _warn = "⚠️ " + ("과매수" if _r_lang=="ko" else "Overbought")
 
             col_rank, col_info, col_bar, col_stats, col_btn = st.columns([0.7, 2.5, 2, 2.5, 1])
 
@@ -3762,11 +4159,14 @@ if st.session_state.show_ranker:
                 </div>""", unsafe_allow_html=True)
 
             with col_stats:
+                _rsi_color = "#FF4B4B" if _rsi_v > 70 else "#00D4AA" if _rsi_v < 30 else "#8B9DB0"
+                _warn_html = (f"<br><span style='color:#FF8C00;font-size:0.72rem;'>{_warn}</span>"
+                              if _warn else "")
                 st.markdown(f"""
                 <div style='padding:10px 0;font-size:0.78rem;color:#8B9DB0;line-height:1.8;'>
                     <span style='color:#EAEAEA;'>3M 모멘텀:</span> <span style='color:{"#FF4040" if _mom>=0 else "#4488FF"};'>{_mom:+.1f}%</span><br>
-                    <span style='color:#EAEAEA;'>추세(연):</span> <span style='color:{"#FF4040" if _trend>=0 else "#4488FF"};'>{_trend:+.1f}%</span><br>
-                    <span style='color:#EAEAEA;'>변동성:</span> {_vol:.1f}%
+                    <span style='color:#EAEAEA;'>RSI:</span> <span style='color:{_rsi_color};'>{_rsi_v:.0f}</span>
+                    &nbsp;<span style='color:#EAEAEA;'>변동성:</span> {_vol:.1f}%{_warn_html}
                 </div>""", unsafe_allow_html=True)
 
             with col_btn:
