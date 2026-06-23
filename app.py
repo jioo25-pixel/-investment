@@ -116,6 +116,7 @@ TEXTS = {
         "summary_analysis": "2-Line Summary Analysis",
         "tab_semi": "💾 Semiconductors",
         "tab_sectors": "🗂️ Sector Explorer",
+        "tab_invest": "📈 Investment Analysis",
     },
     "ko": {
         "title": "미국 증시 인텔리전스 시스템",
@@ -201,6 +202,7 @@ TEXTS = {
         "summary_analysis": "2줄 요약 분석",
         "tab_semi": "💾 반도체 생태계",
         "tab_sectors": "🗂️ 섹터 탐색",
+        "tab_invest": "📈 투자 분석",
     },
 }
 
@@ -534,6 +536,39 @@ GLOSSARY = {
     "P/B Ratio":   "P/B(주가순자산비율): 주가를 회사의 순자산 대비 몇 배로 사는지. 1 미만이면 청산 가치보다 싸게 거래",
     "ROE":         "ROE(자기자본이익률): 주주 돈으로 얼마를 벌었는지. 15% 이상이면 우수한 수익성",
     "FCF":         "FCF(잉여현금흐름): 영업활동 후 실제로 남은 현금. 배당·자사주 매입에 쓰이는 진짜 이익",
+    # Valuation
+    "PER":          "PER(주가수익비율): 현재 주가 ÷ 주당순이익. 낮을수록 저평가. 같은 업종 평균과 비교하는 것이 중요",
+    "PBR":          "PBR(주가순자산비율): 주가 ÷ 주당순자산. 1배 미만이면 자산가치보다 싸게 거래되는 저평가 주식",
+    "PEG":          "PEG(주가수익성장비율): PER ÷ EPS 성장률. 1 미만=저평가, 1 초과=고평가. 성장성까지 고려한 밸류에이션",
+    "P/S Ratio":    "P/S(주가매출비율): 주가 ÷ 주당매출액. 이익이 없는 성장기업 평가에 유용. 낮을수록 매출 대비 저평가",
+    "EV/EBITDA":    "EV/EBITDA: 기업 전체 가치(시총+부채) ÷ 세전·이자·감가상각 전 이익. 기업 인수합병 시 주로 사용하는 지표",
+    # Profitability
+    "ROA":          "ROA(총자산이익률): 순이익 ÷ 총자산 × 100. 회사 전체 자산으로 얼마를 버는지. 높을수록 효율적 경영",
+    "ROIC":         "ROIC(투자자본수익률): 순영업이익 ÷ 투자자본 × 100. 부채·자본 모두 포함한 자본 효율성. WACC보다 높으면 가치 창출",
+    "영업이익률":   "영업이익률: 매출에서 영업비용을 빼고 남은 비율. 본업의 수익성. 높을수록 핵심 사업이 경쟁우위 보유",
+    "Operating Margin": "Operating Margin: Operating profit ÷ revenue. Shows how profitable the core business is. Higher = stronger competitive moat",
+    "Gross Margin": "Gross Margin(매출총이익률): 매출에서 원가만 뺀 이익 비율. 브랜드 파워와 가격결정력을 보여주는 핵심 지표",
+    "Net Margin":   "Net Margin(순이익률): 매출 중 최종적으로 남는 순이익 비율. 모든 비용·세금 차감 후 실질 수익성",
+    # Growth
+    "Revenue Growth": "매출 성장률: 전년 대비 매출이 얼마나 늘었는지. 기업의 사업 확장 속도를 측정하는 핵심 성장 지표",
+    "EPS Growth":   "EPS 성장률: 주당순이익이 전년 대비 얼마나 증가했는지. 이익 성장 속도를 보여줌. 지속 성장 시 주가 상승 동력",
+    # Stability
+    "부채비율":     "부채비율: 총부채 ÷ 자기자본 × 100. 낮을수록 재무 안정. 100% 이하가 안전권. 200% 이상이면 주의 필요",
+    "Debt/Equity":  "Debt-to-Equity: Total debt ÷ shareholders equity. Lower = more financially stable. Under 1.0 is generally safe",
+    "유동비율":     "유동비율: 유동자산 ÷ 유동부채 × 100. 1년 이내 갚아야 할 빚을 1년 이내 현금화 가능 자산으로 충당 가능한지. 150% 이상이 안전",
+    "Current Ratio": "Current Ratio: Current assets ÷ current liabilities. Measures short-term solvency. Above 1.5 is healthy",
+    "Interest Coverage": "이자보상배율: 영업이익 ÷ 이자비용. 이자를 영업이익으로 몇 배나 갚을 수 있는지. 3배 이상이면 안전",
+    # Cash Flow
+    "FCF Yield":    "FCF 수익률: FCF ÷ 시가총액 × 100. 내가 투자한 돈 대비 얼마의 잉여현금이 나오는지. 높을수록 주주 환원 여력 큼",
+    "Operating CF": "영업현금흐름: 실제 영업에서 들어온 현금. 순이익은 회계 처리로 조작 가능하지만 현금흐름은 더 정직한 지표",
+    "CAPEX":        "CAPEX(자본적지출): 공장·설비·기술 등에 투자하는 비용. 미래 성장을 위한 투자. FCF = 영업현금흐름 - CAPEX",
+    # Models
+    "DCF":          "DCF(현금흐름할인법): 미래에 벌어들일 현금을 현재 가치로 환산해 적정 주가를 구하는 대표적 내재가치 평가 모델",
+    "WACC":         "WACC(가중평균자본비용): 기업이 자금을 조달하는 데 드는 평균 비용. DCF 계산 시 미래 현금흐름을 할인하는 데 사용",
+    "Graham Number": "그레이엄 넘버: √(22.5 × EPS × BPS). 가치투자의 아버지 벤저민 그레이엄이 제시한 적정 주가 상한선",
+    "Altman Z-Score": "알트만 Z-스코어: 재무비율로 기업 부도 가능성을 예측하는 모델. 1.8 미만=위험, 3 이상=안전",
+    "Piotroski F-Score": "피오트로스키 F-스코어: 재무 건전성 9개 항목 점수화(0~9점). 8~9점=강한 매수, 0~1점=강한 매도 신호",
+    "Magic Formula": "매직 포뮬러: 조엘 그린블라트의 투자법. 높은 ROIC + 낮은 EV/EBIT 기업을 동시에 선별하는 퀀트 전략",
 }
 
 def gl(term: str, display: str = None) -> str:
@@ -1413,7 +1448,7 @@ for col, (label, val, change) in zip([mcol1, mcol2, mcol3, mcol4, mcol5, mcol6],
     """, unsafe_allow_html=True)
 
 # ─── TABS ─────────────────────────────────────────────────────────────────────
-tabs = st.tabs([T("tab_overview"), T("tab_predict"), T("tab_news"), T("tab_geo"), T("tab_history"), T("tab_company"), T("tab_relations"), T("tab_semi"), T("tab_sectors")])
+tabs = st.tabs([T("tab_overview"), T("tab_predict"), T("tab_news"), T("tab_geo"), T("tab_history"), T("tab_company"), T("tab_relations"), T("tab_semi"), T("tab_sectors"), T("tab_invest")])
 
 # ══════════════════ TAB 1: OVERVIEW ══════════════════
 with tabs[0]:
