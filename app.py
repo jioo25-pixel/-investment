@@ -894,6 +894,351 @@ def get_relevant_geo_factors(sector: str, lang: str) -> list:
     db   = _GEO_FACTORS_KO if lang == "ko" else _GEO_FACTORS_EN
     return [db[k] for k in keys if k in db]
 
+
+def summarize_news_impact(articles: list, company_name: str, ticker: str,
+                          current_price: float, change_1d: float, lang: str) -> str:
+    """Rule-based analysis: what do these news headlines mean for the stock?"""
+    if not articles:
+        return ""
+
+    titles = " ".join(a["title"].lower() for a in articles[:10])
+    summaries = " ".join(a.get("summary","").lower() for a in articles[:10])
+    text = titles + " " + summaries
+
+    # Sentiment scoring
+    pos_kw = ["beat", "record", "surge", "rally", "upgrade", "buy", "strong",
+               "growth", "profit", "revenue", "partnership", "launch", "expand",
+               "exceed", "raise", "positive", "outperform", "contract", "win"]
+    neg_kw = ["miss", "decline", "fall", "drop", "cut", "downgrade", "sell",
+               "loss", "lawsuit", "fine", "investigation", "recall", "layoff",
+               "weak", "concern", "risk", "warn", "lower", "negative", "underperform"]
+    topic_kw = {
+        "earnings": ["earn", "eps", "revenue", "profit", "quarter", "result"],
+        "regulation": ["regulation", "antitrust", "lawsuit", "fine", "sec", "ftc", "doj"],
+        "macro": ["fed", "rate", "inflation", "recession", "economy", "gdp", "tariff"],
+        "product": ["product", "launch", "release", "model", "chip", "device", "service"],
+        "analyst": ["analyst", "target", "price target", "upgrade", "downgrade", "rating"],
+        "trade": ["china", "tariff", "trade", "export", "ban", "supply chain"],
+    }
+
+    pos_score = sum(1 for w in pos_kw if w in text)
+    neg_score = sum(1 for w in neg_kw if w in text)
+    topics_found = [t for t, kws in topic_kw.items() if any(k in text for k in kws)]
+
+    net = pos_score - neg_score
+    if net >= 3:
+        sentiment_label = ("📈 긍정적" if lang=="ko" else "📈 Positive")
+        sentiment_color = "#FF4040"
+        price_impact    = ("주가 상승 압력 우세. 단기 모멘텀 강화 가능성." if lang=="ko"
+                           else "Upside price pressure dominant. Short-term momentum may strengthen.")
+    elif net >= 1:
+        sentiment_label = ("📊 다소 긍정" if lang=="ko" else "📊 Mildly Positive")
+        sentiment_color = "#FFA500"
+        price_impact    = ("뉴스 흐름은 소폭 긍정적. 현 주가 수준 지지 예상." if lang=="ko"
+                           else "News flow mildly supportive. Expect current price level to hold.")
+    elif net <= -3:
+        sentiment_label = ("📉 부정적" if lang=="ko" else "📉 Negative")
+        sentiment_color = "#4488FF"
+        price_impact    = ("하락 압력 우세. 단기 변동성 확대 및 조정 가능성." if lang=="ko"
+                           else "Downside pressure dominant. Short-term volatility and pullback likely.")
+    elif net <= -1:
+        sentiment_label = ("📊 다소 부정" if lang=="ko" else "📊 Mildly Negative")
+        sentiment_color = "#4488FF"
+        price_impact    = ("일부 부정적 뉴스 혼재. 단기 주가 약세 가능성 주시 필요." if lang=="ko"
+                           else "Some negative news in the mix. Watch for short-term weakness.")
+    else:
+        sentiment_label = ("📊 중립" if lang=="ko" else "📊 Neutral")
+        sentiment_color = "#8B9DB0"
+        price_impact    = ("뉴스 영향 중립적. 실적·거시 지표가 방향성을 결정할 것." if lang=="ko"
+                           else "News impact neutral. Earnings and macro data will determine direction.")
+
+    topic_labels_ko = {
+        "earnings": "📊 실적/수익", "regulation": "⚖️ 규제/법률",
+        "macro": "🏦 거시경제", "product": "🚀 제품/서비스",
+        "analyst": "🔍 애널리스트", "trade": "🌐 무역/관세",
+    }
+    topic_labels_en = {
+        "earnings": "📊 Earnings", "regulation": "⚖️ Regulation",
+        "macro": "🏦 Macro", "product": "🚀 Product/Service",
+        "analyst": "🔍 Analyst", "trade": "🌐 Trade",
+    }
+    tl = topic_labels_ko if lang=="ko" else topic_labels_en
+    topic_chips = " ".join(
+        f"<span style='background:#1A2744;border:1px solid #3A4060;border-radius:12px;"
+        f"padding:2px 9px;font-size:0.75rem;color:#B0BEC5;margin-right:4px;'>{tl[t]}</span>"
+        for t in topics_found if t in tl
+    )
+
+    n = len(articles)
+    label_n   = ("관련 기사" if lang=="ko" else "related articles")
+    label_sum = ("뉴스 종합 판단" if lang=="ko" else "News Summary")
+    label_imp = ("주가 영향 전망" if lang=="ko" else "Price Impact Outlook")
+
+    return f"""
+<div style='background:linear-gradient(135deg,#0F1527,#1A1F35);border:1px solid #2E3250;
+            border-radius:12px;padding:16px 20px;margin-top:16px;'>
+    <div style='display:flex;align-items:center;gap:10px;margin-bottom:10px;'>
+        <span style='font-size:1rem;font-weight:800;color:{sentiment_color};'>{sentiment_label}</span>
+        <span style='color:#4A5568;font-size:0.8rem;'>|</span>
+        <span style='color:#8B9DB0;font-size:0.8rem;'>{n} {label_n}</span>
+        <span style='color:#4A5568;font-size:0.8rem;'>|</span>
+        <span style='color:#8B9DB0;font-size:0.8rem;'>{company_name} ({ticker})</span>
+    </div>
+    {f"<div style='margin-bottom:8px;'>{topic_chips}</div>" if topic_chips else ""}
+    <div style='color:#8B9DB0;font-size:0.78rem;font-weight:700;text-transform:uppercase;
+                letter-spacing:0.5px;margin-bottom:4px;'>{label_sum}</div>
+    <div style='color:#EAEAEA;font-size:0.88rem;line-height:1.6;margin-bottom:10px;'>
+        {_news_narrative(pos_score, neg_score, topics_found, company_name, ticker, lang)}
+    </div>
+    <div style='border-top:1px solid #2E3250;padding-top:10px;margin-top:4px;'>
+        <span style='color:#8B9DB0;font-size:0.78rem;font-weight:700;text-transform:uppercase;
+                     letter-spacing:0.5px;'>{label_imp}&nbsp;</span>
+        <span style='color:{sentiment_color};font-size:0.88rem;'>{price_impact}</span>
+    </div>
+</div>
+"""
+
+
+def _news_narrative(pos: int, neg: int, topics: list, company: str, ticker: str, lang: str) -> str:
+    parts = []
+    topic_set = set(topics)
+    if "earnings" in topic_set:
+        parts.append(("최근 실적 관련 뉴스가 다수 보도됨." if lang=="ko"
+                       else "Earnings-related coverage is prominent."))
+    if "analyst" in topic_set:
+        parts.append(("애널리스트 투자의견 변동 관련 보도 확인됨." if lang=="ko"
+                       else "Analyst rating changes reported."))
+    if "regulation" in topic_set:
+        parts.append(("규제·법적 리스크 관련 뉴스 존재. 불확실성 요인." if lang=="ko"
+                       else "Regulatory/legal risk news present — adds uncertainty."))
+    if "trade" in topic_set:
+        parts.append(("무역/관세 이슈가 기업 공급망·마진에 영향 가능." if lang=="ko"
+                       else "Trade/tariff issues may affect supply chain and margins."))
+    if "macro" in topic_set:
+        parts.append(("거시경제 변수(금리·인플레이션)가 밸류에이션에 영향을 미칠 수 있음." if lang=="ko"
+                       else "Macro variables (rates/inflation) may weigh on valuation."))
+    if "product" in topic_set:
+        parts.append(("신제품·서비스 관련 뉴스가 중장기 성장 기대를 자극할 수 있음." if lang=="ko"
+                       else "New product/service news may drive mid-term growth expectations."))
+    if not parts:
+        parts.append(("현재 주요 이슈는 전반적 시장 흐름과 연동되어 있음." if lang=="ko"
+                       else "Current issues are broadly tied to overall market trends."))
+    return " ".join(parts)
+
+
+def summarize_geo_impact(risk_factors: list, geo_news: list, company_name: str,
+                         sector: str, current_price: float, lang: str) -> str:
+    """Rule-based geo impact summary for the stock."""
+    text = " ".join(
+        (a["title"] + " " + a.get("summary","")).lower()
+        for a in geo_news[:8]
+    )
+
+    # Risk level tally
+    high_risks = [r for r in risk_factors if r[3] == "high_risk"]
+    med_risks  = [r for r in risk_factors if r[3] == "med_risk"]
+    low_risks  = [r for r in risk_factors if r[3] == "low_risk"]
+
+    if high_risks:
+        overall = ("⚠️ 고위험 요인 존재" if lang=="ko" else "⚠️ High-Risk Factors Present")
+        color   = "#FF4B4B"
+        price_view = ("지정학 리스크가 주가에 하방 압력을 가할 수 있음. 변동성 확대 구간." if lang=="ko"
+                      else "Geopolitical risks may add downside pressure. Expect elevated volatility.")
+    elif len(med_risks) >= 2:
+        overall = ("🔶 중간 위험 복합" if lang=="ko" else "🔶 Multiple Medium Risks")
+        color   = "#FFA500"
+        price_view = ("복수의 중간 리스크가 단기 주가 변동성을 키울 수 있음. 방어적 포지션 고려." if lang=="ko"
+                      else "Multiple medium risks may amplify short-term volatility. Consider defensive posture.")
+    else:
+        overall = ("🟢 리스크 제한적" if lang=="ko" else "🟢 Limited Risk Exposure")
+        color   = "#00D4AA"
+        price_view = ("현 지정학 환경에서 이 섹터 노출도는 낮음. 안정적 주가 흐름 기대." if lang=="ko"
+                      else "Low sector exposure to current geo environment. Stable price action expected.")
+
+    # Sector-specific impact comment
+    sec_comment_map_ko = {
+        "Technology":             f"{company_name}는 미중 무역갈등·반도체 수출 규제의 직접 영향권. AI 수요는 지속적 상승 동력.",
+        "Energy":                 f"중동 긴장·OPEC 정책이 {company_name}의 유가·마진에 직결. 지정학 불안 시 수혜 가능.",
+        "Financials":             f"연준 금리 경로가 {company_name} 이자마진·대출 성장에 핵심 변수.",
+        "Consumer Discretionary": f"인플레·금리가 소비자 지출 여력을 제약, {company_name} 매출 성장에 영향.",
+        "Industrials":            f"관세·공급망 재편이 {company_name} 원가 구조에 영향. 방산 수요는 긍정 요인.",
+        "Health Care":            f"규제·약가 정책이 {company_name} 수익성의 핵심 리스크.",
+        "Defense":                f"지정학 긴장 지속은 {company_name} 방산 수요 증가로 직결. 분쟁 장기화 시 수혜.",
+    }
+    sec_comment_map_en = {
+        "Technology":             f"{company_name} is directly exposed to US-China trade tensions and semiconductor export controls. AI demand remains a structural tailwind.",
+        "Energy":                 f"Middle East tensions and OPEC policy directly affect {company_name}'s oil pricing and margins. Geopolitical risk can be a tailwind.",
+        "Financials":             f"Fed rate path is the key variable for {company_name}'s net interest margin and loan growth.",
+        "Consumer Discretionary": f"Inflation and rates constrain consumer spending power, impacting {company_name}'s revenue growth.",
+        "Industrials":            f"Tariffs and supply chain restructuring affect {company_name}'s cost structure. Defense demand is a positive.",
+        "Health Care":            f"Drug pricing regulation and FDA policy are core risks to {company_name}'s profitability.",
+        "Defense":                f"Sustained geopolitical tensions directly translate to higher defense demand benefiting {company_name}.",
+    }
+    sc_map = sec_comment_map_ko if lang=="ko" else sec_comment_map_en
+    sec_comment = sc_map.get(sector, (
+        f"현재 지정학 환경이 {company_name}에 미치는 간접적 영향을 모니터링 중."
+        if lang=="ko" else
+        f"Monitoring indirect geopolitical impact on {company_name}."
+    ))
+
+    n_geo = len(geo_news)
+    label_geo = ("관련 지정학 뉴스" if lang=="ko" else "relevant geo news items")
+    label_sum = ("지정학 종합 판단" if lang=="ko" else "Geopolitical Summary")
+    label_imp = ("주가 영향 전망" if lang=="ko" else "Price Impact Outlook")
+
+    return f"""
+<div style='background:linear-gradient(135deg,#0F1527,#1A1F35);border:1px solid #2E3250;
+            border-radius:12px;padding:16px 20px;margin-top:16px;'>
+    <div style='display:flex;align-items:center;gap:10px;margin-bottom:10px;'>
+        <span style='font-size:1rem;font-weight:800;color:{color};'>{overall}</span>
+        <span style='color:#4A5568;font-size:0.8rem;'>|</span>
+        <span style='color:#8B9DB0;font-size:0.8rem;'>{n_geo} {label_geo}</span>
+        <span style='color:#4A5568;font-size:0.8rem;'>|</span>
+        <span style='color:#8B9DB0;font-size:0.8rem;'>{sector or "N/A"}</span>
+    </div>
+    <div style='color:#8B9DB0;font-size:0.78rem;font-weight:700;text-transform:uppercase;
+                letter-spacing:0.5px;margin-bottom:4px;'>{label_sum}</div>
+    <div style='color:#EAEAEA;font-size:0.88rem;line-height:1.6;margin-bottom:10px;'>
+        {sec_comment}
+    </div>
+    <div style='border-top:1px solid #2E3250;padding-top:10px;'>
+        <span style='color:#8B9DB0;font-size:0.78rem;font-weight:700;text-transform:uppercase;
+                     letter-spacing:0.5px;'>{label_imp}&nbsp;</span>
+        <span style='color:{color};font-size:0.88rem;'>{price_view}</span>
+    </div>
+</div>
+"""
+
+
+def summarize_prediction_rationale(predictions: dict, df: pd.DataFrame,
+                                    ticker: str, company_name: str, lang: str) -> str:
+    """Explain WHY the model produced these prediction values."""
+    if not predictions or df.empty:
+        return ""
+
+    close = df["Close"]
+    if close.ndim == 2:
+        close = close.iloc[:, 0]
+    prices = close.dropna().astype(float).values
+    if len(prices) < 60:
+        return ""
+
+    current = float(prices[-1])
+
+    # Compute key signals
+    ma50  = float(np.mean(prices[-50:]))  if len(prices) >= 50  else current
+    ma200 = float(np.mean(prices[-200:])) if len(prices) >= 200 else current
+    ret_1y = float((prices[-1] / prices[-min(252,len(prices))]) - 1) * 100
+    ret_3m = float((prices[-1] / prices[-min(63, len(prices))]) - 1) * 100
+    vol_daily = float(np.std(np.diff(np.log(prices[-min(252,len(prices)):]))))
+    vol_annual = vol_daily * np.sqrt(252) * 100
+
+    trend_up   = current > ma50 > ma200
+    trend_down = current < ma50 < ma200
+    above_ma200 = current > ma200
+    high_vol = vol_annual > 40
+
+    # Collect 12-month prediction
+    p12 = predictions.get(252, predictions.get(max(predictions.keys()), {}))
+    chg_pct = p12.get("change_pct", 0)
+
+    # Build rationale points
+    if lang == "ko":
+        points = []
+        # Trend
+        if trend_up:
+            points.append(f"📈 <b>추세 정배열</b>: 현재가({current:,.0f}) > SMA50({ma50:,.0f}) > SMA200({ma200:,.0f}) — 장기 상승 추세 유효. 선형회귀 모델이 상향 방향 채택.")
+        elif trend_down:
+            points.append(f"📉 <b>추세 역배열</b>: 현재가({current:,.0f}) < SMA50({ma50:,.0f}) < SMA200({ma200:,.0f}) — 장기 하락 추세. 선형회귀 모델이 하향 방향 반영.")
+        else:
+            if above_ma200:
+                points.append(f"📊 <b>혼조 추세</b>: 200일선 위에 있으나 단기 모멘텀 약화. 모델이 중립~소폭 상승 방향 반영.")
+            else:
+                points.append(f"📊 <b>혼조 추세</b>: 200일선 아래 위치. 모멘텀 모델이 하방 편향 반영.")
+
+        # Momentum
+        if ret_3m > 10:
+            points.append(f"🚀 <b>강한 단기 모멘텀</b>: 최근 3개월 수익률 {ret_3m:+.1f}%. 지수가중 모멘텀 모델이 상승 연속성 반영.")
+        elif ret_3m < -10:
+            points.append(f"⬇️ <b>약한 단기 모멘텀</b>: 최근 3개월 {ret_3m:+.1f}%. 모멘텀 모델이 단기 하방 편향 반영.")
+        else:
+            points.append(f"➡️ <b>중립 모멘텀</b>: 최근 3개월 {ret_3m:+.1f}%. 모멘텀 모델 기여도 낮음.")
+
+        # Mean reversion
+        diff_pct = (current - ma200) / ma200 * 100
+        if diff_pct > 20:
+            points.append(f"🔄 <b>평균회귀 압력</b>: 현재가가 200일 이동평균 대비 {diff_pct:+.1f}% 고평가. 평균회귀 모델이 하방 조정 기여.")
+        elif diff_pct < -20:
+            points.append(f"🔄 <b>평균회귀 지지</b>: 현재가가 200일 이동평균 대비 {diff_pct:+.1f}% 저평가. 평균회귀 모델이 상향 복귀 기여.")
+        else:
+            points.append(f"🔄 <b>평균 근처</b>: 200일선 대비 {diff_pct:+.1f}%. 평균회귀 영향 중립.")
+
+        # Volatility
+        if high_vol:
+            points.append(f"⚡ <b>높은 변동성</b>: 연환산 {vol_annual:.1f}% — 강세/약세 구간 폭이 넓음. 예측 불확실성 높음.")
+        else:
+            points.append(f"✅ <b>낮은 변동성</b>: 연환산 {vol_annual:.1f}% — 비교적 안정적. 예측 신뢰도 상대적으로 높음.")
+
+        conclusion = (f"3개 모델 앙상블 기준 12개월 기본 예측: <b style='color:{'#FF4040' if chg_pct>=0 else '#4488FF'};'>{chg_pct:+.1f}%</b> "
+                      f"({'상승' if chg_pct >= 0 else '하락'} 방향). "
+                      f"과거 1년 실적({ret_1y:+.1f}%)이 모델의 기저 추세로 반영됨.")
+
+    else:
+        points = []
+        if trend_up:
+            points.append(f"📈 <b>Bullish alignment</b>: Price({current:,.0f}) > SMA50({ma50:,.0f}) > SMA200({ma200:,.0f}) — Long-term uptrend intact. Linear regression assigns upward trajectory.")
+        elif trend_down:
+            points.append(f"📉 <b>Bearish alignment</b>: Price({current:,.0f}) < SMA50({ma50:,.0f}) < SMA200({ma200:,.0f}) — Long-term downtrend. Regression reflects downward slope.")
+        else:
+            if above_ma200:
+                points.append(f"📊 <b>Mixed trend</b>: Above 200-day MA but short-term momentum weakening. Models lean mildly positive.")
+            else:
+                points.append(f"📊 <b>Mixed trend</b>: Below 200-day MA. Momentum model reflects downward bias.")
+
+        if ret_3m > 10:
+            points.append(f"🚀 <b>Strong short-term momentum</b>: +{ret_3m:.1f}% over 3M. Exponential-weighted model reinforces upward continuation.")
+        elif ret_3m < -10:
+            points.append(f"⬇️ <b>Weak short-term momentum</b>: {ret_3m:+.1f}% over 3M. Momentum model adds downward bias.")
+        else:
+            points.append(f"➡️ <b>Neutral momentum</b>: {ret_3m:+.1f}% over 3M. Low momentum contribution to forecast.")
+
+        diff_pct = (current - ma200) / ma200 * 100
+        if diff_pct > 20:
+            points.append(f"🔄 <b>Mean reversion headwind</b>: Price is {diff_pct:+.1f}% above 200-day MA. Reversion model pulls forecast downward.")
+        elif diff_pct < -20:
+            points.append(f"🔄 <b>Mean reversion tailwind</b>: Price is {diff_pct:+.1f}% below 200-day MA. Reversion model lifts the forecast.")
+        else:
+            points.append(f"🔄 <b>Near mean</b>: {diff_pct:+.1f}% vs 200-day MA. Mean reversion effect is neutral.")
+
+        if high_vol:
+            points.append(f"⚡ <b>High volatility</b>: Annualized {vol_annual:.1f}% — wide bull/bear bands. Higher forecast uncertainty.")
+        else:
+            points.append(f"✅ <b>Low volatility</b>: Annualized {vol_annual:.1f}% — relatively stable. Forecast confidence is higher.")
+
+        conclusion = (f"3-model ensemble 12M base forecast: <b style='color:{'#FF4040' if chg_pct>=0 else '#4488FF'};'>{chg_pct:+.1f}%</b> "
+                      f"({'upside' if chg_pct >= 0 else 'downside'}). "
+                      f"Prior 1Y return ({ret_1y:+.1f}%) is embedded as the trend baseline.")
+
+    bullet_html = "".join(
+        f"<div style='padding:5px 0;border-bottom:1px solid #1E2130;font-size:0.87rem;color:#D0D8E8;'>{p}</div>"
+        for p in points
+    )
+    label_rat   = ("📋 예측 근거 요약" if lang=="ko" else "📋 Prediction Rationale")
+    label_con   = ("종합 결론" if lang=="ko" else "Conclusion")
+
+    return f"""
+<div style='background:linear-gradient(135deg,#0F1527,#1A1F35);border:1px solid #2E3250;
+            border-radius:12px;padding:16px 20px;margin-top:20px;'>
+    <div style='font-size:1rem;font-weight:800;color:#FFA500;margin-bottom:12px;'>{label_rat}</div>
+    {bullet_html}
+    <div style='margin-top:12px;padding-top:10px;border-top:1px solid #2E3250;'>
+        <span style='color:#8B9DB0;font-size:0.78rem;font-weight:700;text-transform:uppercase;
+                     letter-spacing:0.5px;'>{label_con}&nbsp;</span>
+        <span style='font-size:0.88rem;color:#EAEAEA;'>{conclusion}</span>
+    </div>
+</div>
+"""
+
 # ─── TECHNICAL INDICATORS ─────────────────────────────────────────────────────
 def compute_indicators(df: pd.DataFrame) -> pd.DataFrame:
     if df.empty or len(df) < 20:
@@ -1833,6 +2178,11 @@ if _show_tabs:
                 - **Confidence Bands**: Bull/Bear scenarios based on historical volatility (90% CI)
                 """
             st.info(methodology)
+
+            # ── Prediction rationale summary ──────────────────────────────
+            _pred_rationale = summarize_prediction_rationale(predictions, df_5y, ticker, company_name, lang)
+            if _pred_rationale:
+                st.markdown(_pred_rationale, unsafe_allow_html=True)
         else:
             st.warning("Insufficient data for prediction. Need at least 60 trading days.")
 
@@ -1889,6 +2239,13 @@ if _show_tabs:
             st.info(("관련 뉴스를 찾지 못했습니다. 잠시 후 새로고침 해주세요."
                      if lang == "ko" else
                      "No relevant news found for this ticker. Try refreshing."))
+
+        # ── News impact analysis summary ──────────────────────────────────
+        _news_summary_html = summarize_news_impact(
+            articles, company_name, ticker, change_1d, change_1d, lang
+        )
+        if _news_summary_html:
+            st.markdown(_news_summary_html, unsafe_allow_html=True)
 
     # ══════════════════ TAB 4: GEOPOLITICAL ══════════════════
     with tabs[3]:
@@ -1993,6 +2350,13 @@ if _show_tabs:
                 """, unsafe_allow_html=True)
         else:
             st.info("관련 지정학 뉴스를 찾지 못했습니다." if lang == "ko" else "No relevant geopolitical news found.")
+
+        # ── Geo impact analysis summary ───────────────────────────────────
+        _geo_summary_html = summarize_geo_impact(
+            risk_factors, geo_news, company_name, _co_sector, 0.0, lang
+        )
+        if _geo_summary_html:
+            st.markdown(_geo_summary_html, unsafe_allow_html=True)
 
     # ══════════════════ TAB 5: HISTORY ══════════════════
     with tabs[4]:
