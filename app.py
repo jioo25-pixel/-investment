@@ -4124,7 +4124,258 @@ with tabs[7]:
         </div>
         """, unsafe_allow_html=True)
 
-    # ── Section 8: AI One-line Summary ──
+    # ── Section 8: Multi-Model Fair Value Analysis ──
+    st.markdown("<br>", unsafe_allow_html=True)
+    st.markdown(f"### {'🎯 적정 주가 종합 분석 (멀티 밸류에이션)' if lang_inv=='ko' else '🎯 Fair Value Analysis — Multi-Model'}", unsafe_allow_html=True)
+    st.markdown(f"<small style='color:#8B9DB0;'>{'6가지 밸류에이션 모델로 적정가를 산출하고 현재가와 괴리를 분석합니다' if lang_inv=='ko' else '6 valuation models to estimate fair value and explain the gap from current price'}</small>", unsafe_allow_html=True)
+    st.markdown("<br>", unsafe_allow_html=True)
+
+    _curr = curr_pr or 0
+    fv_methods = []  # list of (method_name, fair_value, weight, color, description)
+
+    # 1) PER-based: industry-avg P/E × trailing EPS
+    _eps_t = inv_info.get("trailingEps") or 0
+    _per_fwd = inv_info.get("forwardPE")
+    _per_trail = inv_info.get("trailingPE")
+    # Use sector median P/E heuristic (technology ≈ 25, broad market ≈ 18)
+    _sector_pe = 25.0 if "tech" in (inv_info.get("sector","") or "").lower() else 20.0
+    _fv_per = _sector_pe * _eps_t if _eps_t and _eps_t > 0 else None
+
+    # 2) PBR-based: sector-avg P/B × book value per share
+    _bps = inv_info.get("bookValue") or 0
+    _sector_pb = 4.0 if "tech" in (inv_info.get("sector","") or "").lower() else 2.5
+    _fv_pbr = _sector_pb * _bps if _bps and _bps > 0 else None
+
+    # 3) P/S-based: sector-avg P/S × revenue per share
+    _rev = inv_info.get("totalRevenue") or 0
+    _shares = inv_info.get("sharesOutstanding") or 1
+    _rev_ps = _rev / _shares if _shares else 0
+    _sector_ps = 8.0 if "tech" in (inv_info.get("sector","") or "").lower() else 2.0
+    _fv_ps = _sector_ps * _rev_ps if _rev_ps else None
+
+    # 4) EV/EBITDA-based
+    _ebitda = inv_info.get("ebitda") or 0
+    _td2 = inv_info.get("totalDebt") or 0
+    _cash = inv_info.get("totalCash") or 0
+    _sector_ev_ebitda = 20.0 if "tech" in (inv_info.get("sector","") or "").lower() else 12.0
+    if _ebitda and _ebitda > 0 and _shares:
+        _ev_fair = _sector_ev_ebitda * _ebitda
+        _eq_fair = _ev_fair - _td2 + _cash
+        _fv_evebitda = _eq_fair / _shares if _eq_fair > 0 else None
+    else:
+        _fv_evebitda = None
+
+    # 5) Graham Number
+    _fv_graham = graham  # already computed above (may be None)
+
+    # 6) DCF
+    try:
+        _fv_dcf = dcf_per_share if 'dcf_per_share' in dir() else None
+    except Exception:
+        _fv_dcf = None
+
+    # 7) Analyst consensus
+    _fv_analyst = inv_info.get("targetMeanPrice") or None
+    _fv_analyst_low  = inv_info.get("targetLowPrice") or None
+    _fv_analyst_high = inv_info.get("targetHighPrice") or None
+
+    # Build table
+    _methods_raw = [
+        ("PER 기반" if lang_inv=="ko" else "P/E Based",       _fv_per,      1.5, "#FFA500",
+         f"섹터 평균 PER {_sector_pe:.0f}배 × EPS({_eps_t:.2f})" if lang_inv=="ko"
+         else f"Sector avg P/E {_sector_pe:.0f}x × EPS({_eps_t:.2f})"),
+        ("PBR 기반" if lang_inv=="ko" else "P/B Based",       _fv_pbr,      1.0, "#64B5F6",
+         f"섹터 평균 PBR {_sector_pb:.1f}배 × BPS({_bps:.2f})" if lang_inv=="ko"
+         else f"Sector avg P/B {_sector_pb:.1f}x × BPS({_bps:.2f})"),
+        ("P/S 기반" if lang_inv=="ko" else "P/S Based",       _fv_ps,       0.8, "#AB63FA",
+         f"섹터 평균 P/S {_sector_ps:.1f}배 × 주당매출({_rev_ps:.2f})" if lang_inv=="ko"
+         else f"Sector avg P/S {_sector_ps:.1f}x × RevPS({_rev_ps:.2f})"),
+        ("EV/EBITDA 기반" if lang_inv=="ko" else "EV/EBITDA",  _fv_evebitda, 1.2, "#FF8C00",
+         f"섹터 평균 EV/EBITDA {_sector_ev_ebitda:.0f}배 적용" if lang_inv=="ko"
+         else f"Sector avg EV/EBITDA {_sector_ev_ebitda:.0f}x applied"),
+        ("그레이엄 넘버" if lang_inv=="ko" else "Graham Number", _fv_graham,  1.0, "#FFD700",
+         "√(22.5 × EPS × BPS) — 안전마진 기준"),
+        ("DCF 내재가치" if lang_inv=="ko" else "DCF Value",    _fv_dcf,      2.0, "#00D4AA",
+         "3단계 성장 DCF 모델 (WACC 9%)" if lang_inv=="ko" else "3-stage DCF model (WACC 9%)"),
+        ("애널리스트 목표가" if lang_inv=="ko" else "Analyst Target", _fv_analyst, 1.5, "#E91E8C",
+         f"기관 애널리스트 평균 목표가 (범위: ${_fv_analyst_low or '?'}~${_fv_analyst_high or '?'})" if lang_inv=="ko"
+         else f"Consensus analyst target (range: ${_fv_analyst_low or '?'}~${_fv_analyst_high or '?'})"),
+    ]
+    _valid = [(n, v, w, c, d) for n, v, w, c, d in _methods_raw if v and v > 0]
+
+    if _valid and _curr > 0:
+        # Weighted average fair value
+        _total_w = sum(w for _, _, w, _, _ in _valid)
+        _wavg_fv = sum(v * w for _, v, w, _, _ in _valid) / _total_w
+        _simple_avg = sum(v for _, v, _, _, _ in _valid) / len(_valid)
+        _gap_pct = (_wavg_fv - _curr) / _curr * 100
+        _gap_color = "#00D4AA" if _gap_pct > 10 else "#FF4B4B" if _gap_pct < -10 else "#FFA500"
+        _gap_label = (
+            ("🟢 저평가 — 매수 고려 구간" if _gap_pct > 20
+             else "🟡 약간 저평가" if _gap_pct > 10
+             else "🟡 적정 가격 근접" if _gap_pct > -10
+             else "🟠 약간 고평가" if _gap_pct > -20
+             else "🔴 고평가 — 주의 구간")
+            if lang_inv == "ko" else
+            ("🟢 Undervalued — Consider buying" if _gap_pct > 20
+             else "🟡 Slightly undervalued" if _gap_pct > 10
+             else "🟡 Near fair value" if _gap_pct > -10
+             else "🟠 Slightly overvalued" if _gap_pct > -20
+             else "🔴 Overvalued — Caution")
+        )
+
+        # ── Summary banner ──
+        _min_fv = min(v for _, v, _, _, _ in _valid)
+        _max_fv = max(v for _, v, _, _, _ in _valid)
+        st.markdown(f"""
+        <div style='background:linear-gradient(135deg,#1A1F35,#0F1527);border:2px solid {_gap_color};
+                    border-radius:14px;padding:20px 28px;margin-bottom:20px;'>
+            <div style='display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:16px;'>
+                <div>
+                    <div style='font-size:0.82rem;color:#8B9DB0;margin-bottom:4px;'>
+                        {"가중평균 적정주가 (" + str(len(_valid)) + "개 모델)" if lang_inv=="ko"
+                         else "Weighted Avg Fair Value (" + str(len(_valid)) + " models)"}
+                    </div>
+                    <div style='font-size:2.4rem;font-weight:900;color:{_gap_color};'>${_wavg_fv:,.2f}</div>
+                    <div style='font-size:1rem;color:{_gap_color};font-weight:700;margin-top:4px;'>{_gap_label}</div>
+                </div>
+                <div>
+                    <div style='font-size:0.82rem;color:#8B9DB0;'>{"현재가" if lang_inv=="ko" else "Current Price"}</div>
+                    <div style='font-size:1.8rem;font-weight:800;color:#FFFFFF;'>${_curr:,.2f}</div>
+                    <div style='font-size:1.1rem;font-weight:700;color:{_gap_color};margin-top:4px;'>{_gap_pct:+.1f}% {"괴리율" if lang_inv=="ko" else "gap"}</div>
+                </div>
+                <div>
+                    <div style='font-size:0.82rem;color:#8B9DB0;'>{"적정가 범위" if lang_inv=="ko" else "Fair Value Range"}</div>
+                    <div style='font-size:1rem;color:#B0BEC5;margin-top:4px;'>${_min_fv:,.2f} ~ ${_max_fv:,.2f}</div>
+                    <div style='font-size:0.82rem;color:#8B9DB0;margin-top:4px;'>{"단순 평균" if lang_inv=="ko" else "Simple avg"}: ${_simple_avg:,.2f}</div>
+                </div>
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
+
+        # ── Method-by-method table + bar chart ──
+        fv_chart_col, fv_table_col = st.columns([3, 2])
+
+        with fv_chart_col:
+            fig_fv = go.Figure()
+            names_fv = [n for n, _, _, _, _ in _valid]
+            vals_fv  = [v for _, v, _, _, _ in _valid]
+            colors_fv = [c for _, _, _, c, _ in _valid]
+            gaps_fv   = [(v - _curr) / _curr * 100 for v in vals_fv]
+
+            fig_fv.add_trace(go.Bar(
+                x=names_fv, y=vals_fv,
+                marker_color=colors_fv,
+                text=[f"${v:,.0f}<br>{g:+.1f}%" for v, g in zip(vals_fv, gaps_fv)],
+                textposition="outside",
+                hovertemplate="<b>%{x}</b><br>적정가: $%{y:,.2f}<br>괴리: %{text}<extra></extra>",
+            ))
+            # Current price line
+            fig_fv.add_hline(
+                y=_curr, line_dash="dash", line_color="#FFFFFF", line_width=2,
+                annotation_text=f"  현재가 ${_curr:,.2f}" if lang_inv=="ko" else f"  Current ${_curr:,.2f}",
+                annotation_font_color="#FFFFFF",
+            )
+            # Weighted avg line
+            fig_fv.add_hline(
+                y=_wavg_fv, line_dash="dot", line_color=_gap_color, line_width=2,
+                annotation_text=f"  적정가 ${_wavg_fv:,.2f}" if lang_inv=="ko" else f"  Fair Value ${_wavg_fv:,.2f}",
+                annotation_font_color=_gap_color,
+            )
+            fig_fv.update_layout(
+                template="plotly_dark",
+                height=380,
+                title=f"{'모델별 적정가 vs 현재가' if lang_inv=='ko' else 'Fair Value by Model vs Current Price'}",
+                margin=dict(l=0, r=0, t=50, b=0),
+                plot_bgcolor="#0E1117", paper_bgcolor="#0E1117",
+                yaxis_title="Price (USD)" if lang_inv=="en" else "주가 (USD)",
+                showlegend=False,
+            )
+            st.plotly_chart(fig_fv, use_container_width=True)
+
+        with fv_table_col:
+            st.markdown(f"<div style='font-weight:700;color:#FFA500;margin-bottom:10px;'>{'모델별 상세' if lang_inv=='ko' else 'Model Detail'}</div>", unsafe_allow_html=True)
+            for n, v, w, c, desc in _valid:
+                _g = (v - _curr) / _curr * 100
+                _g_c = "#00D4AA" if _g > 0 else "#FF4B4B"
+                st.markdown(f"""
+                <div style='background:#1A1F35;border-left:3px solid {c};border-radius:0 8px 8px 0;
+                            padding:10px 14px;margin-bottom:8px;'>
+                    <div style='display:flex;justify-content:space-between;align-items:center;'>
+                        <span style='font-weight:700;color:{c};font-size:0.85rem;'>{n}</span>
+                        <span style='font-size:1rem;font-weight:800;color:#FFFFFF;'>${v:,.2f}</span>
+                    </div>
+                    <div style='display:flex;justify-content:space-between;margin-top:4px;'>
+                        <span style='color:#8B9DB0;font-size:0.72rem;'>{desc[:40]}{"..." if len(desc)>40 else ""}</span>
+                        <span style='color:{_g_c};font-size:0.82rem;font-weight:700;'>{_g:+.1f}%</span>
+                    </div>
+                </div>
+                """, unsafe_allow_html=True)
+
+        # ── Gap analysis explanation ──
+        st.markdown("<br>", unsafe_allow_html=True)
+        st.markdown(f"<div class='section-header'>{'🔍 괴리율 원인 분석' if lang_inv=='ko' else '🔍 Gap Analysis'}</div>", unsafe_allow_html=True)
+
+        def _gap_explanation(gap_pct, inv_info, lang_inv, per, pbr, roe, rev_growth, fcf_val):
+            reasons = []
+            if gap_pct > 20:
+                reasons.append("📉 " + ("현재 주가가 여러 밸류에이션 모델 대비 크게 저평가되어 있습니다. 시장이 단기 악재를 과도하게 반영했거나, 아직 성장 잠재력이 충분히 인정받지 못했을 가능성이 있습니다." if lang_inv=="ko" else "The stock appears significantly undervalued vs. multiple models. The market may be over-pricing short-term risks or the growth potential may not yet be fully recognized."))
+            elif gap_pct > 5:
+                reasons.append("📊 " + ("현재가가 적정가보다 다소 낮습니다. 단기 모멘텀 부재나 섹터 전반의 약세가 원인일 수 있습니다." if lang_inv=="ko" else "Price is slightly below fair value. Short-term momentum weakness or sector-wide selling pressure may be the cause."))
+            elif gap_pct > -5:
+                reasons.append("⚖️ " + ("현재 주가가 여러 모델의 적정가와 거의 일치합니다. 시장이 적절히 가격을 반영한 상태입니다." if lang_inv=="ko" else "Current price is well-aligned with multi-model fair values. The market appears to be pricing the stock fairly."))
+            elif gap_pct > -20:
+                reasons.append("📈 " + ("현재가가 적정가보다 높습니다. 성장 프리미엄·브랜드 가치 등이 반영됐거나 시장 과열 신호일 수 있습니다." if lang_inv=="ko" else "Price is above fair value. Growth premium, brand value, or market exuberance may be reflected."))
+            else:
+                reasons.append("🚨 " + ("현재 주가가 대부분의 밸류에이션 모델 대비 크게 고평가되어 있습니다. 투자 시 주의가 필요합니다." if lang_inv=="ko" else "The stock appears significantly overvalued vs. most models. Caution is advised."))
+
+            # Specific factor analysis
+            if per and float(per) > 40:
+                reasons.append("🔺 " + (f"PER {float(per):.1f}배로 업종 평균 대비 높아 성장 기대감이 주가에 선반영된 상태입니다." if lang_inv=="ko"
+                               else f"P/E of {float(per):.1f}x is above sector avg — high growth expectations are priced in."))
+            if pbr and float(pbr) > 5:
+                reasons.append("🔺 " + (f"PBR {float(pbr):.1f}배로 강력한 무형자산(브랜드·기술·특허) 가치가 반영된 것으로 해석됩니다." if lang_inv=="ko"
+                               else f"P/B of {float(pbr):.1f}x suggests strong intangible assets (brand/tech/IP) are priced in."))
+            if roe and float(roe) * 100 > 20:
+                reasons.append("✅ " + (f"ROE {float(roe)*100:.1f}%의 높은 수익성이 프리미엄 밸류에이션을 정당화합니다." if lang_inv=="ko"
+                               else f"ROE of {float(roe)*100:.1f}% justifies premium valuation."))
+            if rev_growth and float(rev_growth) * 100 > 20:
+                reasons.append("✅ " + (f"매출 성장률 {float(rev_growth)*100:.1f}%의 고성장이 현재 주가를 지지합니다." if lang_inv=="ko"
+                               else f"{float(rev_growth)*100:.1f}% revenue growth supports the current price level."))
+            if fcf_val and fcf_val < 0:
+                reasons.append("⚠️ " + ("FCF가 마이너스로 성장 투자 단계의 기업입니다. 미래 수익성에 대한 신뢰가 가격 결정의 핵심입니다." if lang_inv=="ko"
+                               else "Negative FCF indicates a growth-stage company. Future profitability expectations drive the price."))
+
+            analyst_tgt = inv_info.get("targetMeanPrice")
+            n_analysts  = inv_info.get("numberOfAnalystOpinions") or 0
+            if analyst_tgt and n_analysts:
+                reasons.append("📋 " + (f"총 {n_analysts}명의 애널리스트 평균 목표가는 ${analyst_tgt:,.2f}입니다." if lang_inv=="ko"
+                               else f"{n_analysts} analysts have an average target of ${analyst_tgt:,.2f}."))
+            return reasons
+
+        _reasons = _gap_explanation(_gap_pct, inv_info, lang_inv, per, pbr, roe, rev_growth, fcf_val)
+        for r in _reasons:
+            st.markdown(f"""
+            <div style='background:#1A1F35;border-left:3px solid {_gap_color};border-radius:0 8px 8px 0;
+                        padding:10px 16px;margin-bottom:8px;font-size:0.88rem;color:#E0E0E0;line-height:1.6;'>
+                {r}
+            </div>
+            """, unsafe_allow_html=True)
+
+        st.markdown(f"""
+        <div style='background:#0D1120;border:1px solid #2E3250;border-radius:10px;padding:12px 16px;margin-top:8px;'>
+            <div style='font-size:0.78rem;color:#6B7A8D;'>
+                {"※ 적정가는 모델·가정에 따라 크게 달라집니다. 섹터 평균 배수는 시장 상황에 따라 변동되며, 본 분석은 참고용입니다." if lang_inv=="ko"
+                 else "⚠ Fair values vary significantly by model and assumptions. Sector multiples shift with market conditions. For reference only."}
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
+
+    else:
+        st.info("현재가 또는 재무 데이터 부족으로 적정가 분석이 어렵습니다." if lang_inv=="ko"
+                else "Insufficient financial data to perform fair value analysis.")
+
+    # ── Section 9: AI One-line Summary ──
     st.markdown("<br>", unsafe_allow_html=True)
     st.markdown(f"### {'🤖 AI 종합 투자 분석 요약' if lang_inv=='ko' else '🤖 AI Investment Summary'}", unsafe_allow_html=True)
 
