@@ -2556,6 +2556,19 @@ lang   = st.session_state.lang
 
 # ─── SIDEBAR ──────────────────────────────────────────────────────────────────
 with st.sidebar:
+    # ── Home (주요 이슈) button ───────────────────────────────────────────────
+    _home_active = st.session_state.home_mode
+    _home_lbl = ("📰 오늘의 주요 이슈 ✓" if _home_active else "📰 오늘의 주요 이슈")
+    if st.button(_home_lbl, use_container_width=True,
+                 type="primary" if _home_active else "secondary",
+                 key="sb_home"):
+        st.session_state.home_mode = True
+        st.session_state.show_ranker = False
+        st.session_state.sidebar_view = None
+        st.rerun()
+
+    st.divider()
+
     # ── Ranker button (top of sidebar) ───────────────────────────────────────
     _ranker_active = st.session_state.show_ranker
     _ranker_lbl = ("📊 예측 수익률 순위 ✓" if _ranker_active else "📊 예측 수익률 순위")
