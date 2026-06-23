@@ -6008,10 +6008,71 @@ if not st.session_state.home_mode and _show_tabs:
         # Disclaimer
         st.markdown(f"<small style='color:#4A5568;'>{'⚠️ 모든 지표는 참고용입니다. yFinance 실시간 데이터 기반. 투자는 본인 책임입니다.' if lang_inv=='ko' else '⚠️ All metrics for reference only. Based on yFinance real-time data. Invest at your own risk.'}</small>", unsafe_allow_html=True)
 
-    # ─── FOOTER ───────────────────────────────────────────────────────────────────
-    st.markdown("<br><br>", unsafe_allow_html=True)
-    st.markdown("<br><br>", unsafe_allow_html=True)
-    st.markdown(f"""
+# ══════════════════ HOME DASHBOARD ══════════════════
+if st.session_state.home_mode and not st.session_state.get("show_ranker", False) and st.session_state.get("sidebar_view") is None:
+    _home_lang = st.session_state.lang
+    _home_hdr = "📈 시장 현황" if _home_lang == "ko" else "📈 Today's Market"
+    st.markdown(f"<div class='section-header'>{_home_hdr}</div>", unsafe_allow_html=True)
+
+    # Top 10 stock price cards in 5-column x 2-row layout
+    _top10_data = fetch_top10_prices()
+    _top10_cols_row1 = st.columns(5)
+    _top10_cols_row2 = st.columns(5)
+    for _idx, _stock in enumerate(_top10_data):
+        _sym = _stock["sym"]
+        _name = _stock["name"]
+        _price = _stock["price"]
+        _chg = _stock["chg"]
+        _chg_color = "#FF4040" if _chg >= 0 else "#4488FF"
+        _chg_arrow = "▲" if _chg >= 0 else "▼"
+        _btn_label = (
+            f"**{_name}** ({_sym})\n\n"
+            f"${_price:,.2f}  {_chg_arrow} {abs(_chg):.2f}%"
+        )
+        _col_row = _top10_cols_row1 if _idx < 5 else _top10_cols_row2
+        with _col_row[_idx % 5]:
+            if st.button(_btn_label, key=f"home_top10_{_sym}", use_container_width=True):
+                st.session_state.ticker = _sym
+                st.session_state.home_mode = False
+                st.rerun()
+
+    st.divider()
+
+    # News & impact analysis section
+    _news_hdr = "📰 오늘의 주요 이슈 & 주가 영향 분석" if _home_lang == "ko" else "📰 Today's Top Issues & Stock Impact Analysis"
+    st.markdown(f"<div class='section-header'>{_news_hdr}</div>", unsafe_allow_html=True)
+    _home_digest = fetch_market_digest()
+    _home_articles = _home_digest[:10]
+    if _home_articles:
+        for _art in _home_articles:
+            _impact_txt = _issue_impact(_art["title"], _home_lang)
+            _imp_badge = (
+                "<span style='color:#FF4040;font-size:0.65rem;font-weight:700;"
+                "border:1px solid #FF4040;border-radius:8px;padding:1px 5px;"
+                "margin-right:4px;'>HOT</span>"
+                if _art["impact"] else ""
+            )
+            _pub = _art["published"][:10] if _art["published"] else ""
+            _src = _art["source"]
+            st.markdown(
+                f"<div style='padding:8px 0;border-bottom:1px solid #1E2130;'>"
+                f"  {_imp_badge}"
+                f"  <a href='{_art['link']}' target='_blank' "
+                f"     style='color:#D0D8E8;font-size:0.82rem;text-decoration:none;"
+                f"             line-height:1.4;font-weight:600;'>{_art['title']}</a>"
+                f"  <div style='color:#FFA500;font-size:0.75rem;margin-top:3px;'>{_impact_txt}</div>"
+                f"  <div style='color:#4A5568;font-size:0.68rem;margin-top:2px;'>"
+                f"    {_src} · {_pub}</div>"
+                f"</div>",
+                unsafe_allow_html=True
+            )
+    else:
+        st.caption("뉴스 로딩 중..." if _home_lang == "ko" else "Loading news...")
+
+# ─── FOOTER ───────────────────────────────────────────────────────────────────
+st.markdown("<br><br>", unsafe_allow_html=True)
+st.markdown("<br><br>", unsafe_allow_html=True)
+st.markdown(f"""
     <div style='text-align:center;color:#4A5568;font-size:0.8rem;padding:16px;border-top:1px solid #2E3250;'>
         {'⚠️ 이 프로그램은 교육 및 분석 목적으로만 제공됩니다. 투자 결정은 전문 금융 어드바이저와 상담하세요.' if lang == 'ko'
          else '⚠️ This system is for educational and analytical purposes only. Consult a qualified financial advisor before making investment decisions.'}<br>
