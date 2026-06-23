@@ -1013,8 +1013,8 @@ def build_price_chart(df: pd.DataFrame, ticker: str, lang: str) -> go.Figure:
         open=open_col, high=high_col,
         low=low_col, close=close,
         name=ticker,
-        increasing_line_color="#00D4AA",
-        decreasing_line_color="#FF4B4B",
+        increasing_line_color="#FF4040",
+        decreasing_line_color="#4488FF",
     ), row=1, col=1)
 
     # Bollinger Bands
@@ -1049,7 +1049,7 @@ def build_price_chart(df: pd.DataFrame, ticker: str, lang: str) -> go.Figure:
         vol = df["Volume"]
         if vol.ndim == 2:
             vol = vol.iloc[:, 0]
-        colors = ["#00D4AA" if float(c) >= float(o) else "#FF4B4B"
+        colors = ["#FF4040" if float(c) >= float(o) else "#4488FF"
                   for c, o in zip(close, open_col)]
         fig.add_trace(go.Bar(
             x=df.index, y=vol, marker_color=colors,
@@ -1205,7 +1205,7 @@ def build_macro_chart(macro_data: dict, lang: str) -> go.Figure:
 
     names = list(macro_data.keys())
     changes = [macro_data[n]["change_pct"] for n in names]
-    colors = ["#00D4AA" if c >= 0 else "#FF4B4B" for c in changes]
+    colors = ["#FF4040" if c >= 0 else "#4488FF" for c in changes]
 
     fig = go.Figure(go.Bar(
         x=names, y=changes,
@@ -1229,7 +1229,7 @@ def build_geo_timeline(lang: str) -> go.Figure:
     dates = [e["date"] for e in events]
     impacts = [e["impact"] for e in events]
     labels = [e[f"event_{lang}"] for e in events]
-    colors = ["#00D4AA" if i >= 0 else "#FF4B4B" for i in impacts]
+    colors = ["#FF4040" if i >= 0 else "#4488FF" for i in impacts]
 
     fig = go.Figure()
     fig.add_trace(go.Bar(
@@ -1274,8 +1274,8 @@ st.markdown("""
     }
     .metric-value { font-size: 1.6rem; font-weight: 700; color: #FFFFFF; }
     .metric-label { font-size: 0.75rem; color: #8B9DB0; margin-bottom: 4px; }
-    .metric-change-pos { color: #00D4AA; font-size: 0.9rem; }
-    .metric-change-neg { color: #FF4B4B; font-size: 0.9rem; }
+    .metric-change-pos { color: #FF4040; font-size: 0.9rem; }
+    .metric-change-neg { color: #4488FF; font-size: 0.9rem; }
     .news-card {
         background: #1E2130;
         border-left: 3px solid #FFA500;
@@ -1305,8 +1305,8 @@ st.markdown("""
     }
     .pred-horizon { font-size: 0.85rem; color: #8B9DB0; margin-bottom: 8px; }
     .pred-price { font-size: 1.5rem; font-weight: 700; color: #FFA500; }
-    .pred-change-pos { font-size: 1rem; color: #00D4AA; }
-    .pred-change-neg { font-size: 1rem; color: #FF4B4B; }
+    .pred-change-pos { font-size: 1rem; color: #FF4040; }
+    .pred-change-neg { font-size: 1rem; color: #4488FF; }
     .section-header {
         font-size: 1.2rem;
         font-weight: 700;
@@ -1520,7 +1520,7 @@ company_name = info.get("shortName", ticker)
 current_price = info.get("currentPrice") or info.get("regularMarketPrice") or info.get("previousClose", 0)
 prev_close = info.get("previousClose", current_price)
 change_1d = ((current_price - prev_close) / prev_close * 100) if prev_close else 0
-change_color = "#00D4AA" if change_1d >= 0 else "#FF4B4B"
+change_color = "#FF4040" if change_1d >= 0 else "#4488FF"
 change_arrow = "▲" if change_1d >= 0 else "▼"
 
 st.markdown(f"""
@@ -1619,7 +1619,7 @@ with tabs[0]:
     # Sentiment gauge
     sentiment = get_sentiment(df_2y)
     sent_label = sentiment["label_ko"] if lang == "ko" else sentiment["label_en"]
-    sent_color = "#00D4AA" if sent_label in ["Bullish", "강세"] else "#FF4B4B" if sent_label in ["Bearish", "약세"] else "#FFA500"
+    sent_color = "#FF4040" if sent_label in ["Bullish", "강세"] else "#4488FF" if sent_label in ["Bearish", "약세"] else "#FFA500"
 
     scol1, scol2 = st.columns([1, 2])
     with scol1:
@@ -1662,7 +1662,7 @@ with tabs[1]:
             if h in predictions:
                 p = predictions[h]
                 chg = p["change_pct"]
-                chg_color = "#00D4AA" if chg >= 0 else "#FF4B4B"
+                chg_color = "#FF4040" if chg >= 0 else "#4488FF"
                 chg_arrow = "▲" if chg >= 0 else "▼"
                 col.markdown(f"""
                 <div class='prediction-card'>
@@ -1670,8 +1670,8 @@ with tabs[1]:
                     <div class='pred-price'>${p['base']:,.2f}</div>
                     <div style='color:{chg_color};font-size:1rem;font-weight:600;'>{chg_arrow} {abs(chg):.1f}%</div>
                     <div style='margin-top:10px;padding-top:10px;border-top:1px solid #2E3250;'>
-                        <div style='color:#00D4AA;font-size:0.8rem;'>▲ {gl("Bull Case", T("pred_bull"))}: ${p['bull']:,.2f}</div>
-                        <div style='color:#FF4B4B;font-size:0.8rem;'>▼ {gl("Bear Case", T("pred_bear"))}: ${p['bear']:,.2f}</div>
+                        <div style='color:#FF4040;font-size:0.8rem;'>▲ {gl("Bull Case", T("pred_bull"))}: ${p['bull']:,.2f}</div>
+                        <div style='color:#4488FF;font-size:0.8rem;'>▼ {gl("Bear Case", T("pred_bear"))}: ${p['bear']:,.2f}</div>
                     </div>
                     <div style='margin-top:8px;color:#8B9DB0;font-size:0.75rem;'>
                         {gl("Volatility (Annualized)", T("volatility"))}: {p['vol_annual']:.1f}%
@@ -1794,7 +1794,7 @@ with tabs[3]:
         data = macro_data.get(key, {})
         val = data.get("current", 0)
         chg = data.get("change_pct", 0)
-        chg_color = "#00D4AA" if chg >= 0 else "#FF4B4B"
+        chg_color = "#FF4040" if chg >= 0 else "#4488FF"
         col.markdown(f"""
         <div class='metric-card'>
             <div class='metric-label'>{label}</div>
@@ -1910,7 +1910,7 @@ with tabs[4]:
                     raw_label = event[f"event_{lang}"].split("→")[0].strip()
                     # Build top-to-bottom text: each character on its own line
                     vertical_text = "<br>".join(list(raw_label))
-                    color = "#FF4B4B" if event["impact"] < 0 else "#00D4AA"
+                    color = "#4488FF" if event["impact"] < 0 else "#FF4040"
                     # Alternate y positions to prevent overlap
                     y_pos = price_max * (0.92 - (idx_e % 3) * 0.10)
                     fig_hist.add_vline(
@@ -2888,7 +2888,7 @@ if st.session_state.sidebar_view == "semi":
                     pd_live = price_data.get(t_sym, {})
                     live_price = pd_live.get("price", 0)
                     live_chg   = pd_live.get("chg", 0)
-                    chg_color  = "#00D4AA" if live_chg >= 0 else "#FF4B4B"
+                    chg_color  = "#FF4040" if live_chg >= 0 else "#4488FF"
                     chg_arrow  = "▲" if live_chg >= 0 else "▼"
                     price_str  = f"${live_price:,.2f}" if live_price else "—"
 
@@ -3640,7 +3640,7 @@ if st.session_state.sidebar_view == "sectors":
                     pd_s    = prices_se.get(sym, {})
                     price_s = pd_s.get("price", 0)
                     chg_s   = pd_s.get("chg", 0)
-                    chg_c   = "#00D4AA" if chg_s >= 0 else "#FF4B4B"
+                    chg_c   = "#FF4040" if chg_s >= 0 else "#4488FF"
                     arrow_s = "▲" if chg_s >= 0 else "▼"
                     price_display = f"${price_s:,.2f}" if price_s else "—"
 
@@ -3692,7 +3692,7 @@ if st.session_state.sidebar_view == "sectors":
                     sorted_r = sorted(returns_data.items(), key=lambda x: x[1], reverse=True)
                     names_r  = [x[0] for x in sorted_r]
                     vals_r   = [x[1] for x in sorted_r]
-                    colors_r = [color_s if v >= 0 else "#FF4B4B" for v in vals_r]
+                    colors_r = [color_s if v >= 0 else "#4488FF" for v in vals_r]
 
                     fig_sr = go.Figure(go.Bar(
                         x=names_r, y=vals_r,
@@ -4276,7 +4276,7 @@ with tabs[7]:
         _wavg_fv = sum(v * w for _, v, w, _, _ in _valid) / _total_w
         _simple_avg = sum(v for _, v, _, _, _ in _valid) / len(_valid)
         _gap_pct = (_wavg_fv - _curr) / _curr * 100
-        _gap_color = "#00D4AA" if _gap_pct > 10 else "#FF4B4B" if _gap_pct < -10 else "#FFA500"
+        _gap_color = "#FF4040" if _gap_pct > 10 else "#4488FF" if _gap_pct < -10 else "#FFA500"
         _gap_label = (
             ("🟢 저평가 — 매수 고려 구간" if _gap_pct > 20
              else "🟡 약간 저평가" if _gap_pct > 10
@@ -4364,7 +4364,7 @@ with tabs[7]:
             st.markdown(f"<div style='font-weight:700;color:#FFA500;margin-bottom:10px;'>{'모델별 상세' if lang_inv=='ko' else 'Model Detail'}</div>", unsafe_allow_html=True)
             for n, v, w, c, desc in _valid:
                 _g = (v - _curr) / _curr * 100
-                _g_c = "#00D4AA" if _g > 0 else "#FF4B4B"
+                _g_c = "#FF4040" if _g > 0 else "#4488FF"
                 st.markdown(f"""
                 <div style='background:#1A1F35;border-left:3px solid {c};border-radius:0 8px 8px 0;
                             padding:10px 14px;margin-bottom:8px;'>
