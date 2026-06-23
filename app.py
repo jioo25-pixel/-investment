@@ -229,6 +229,8 @@ if "data_fetched_at" not in st.session_state:
     st.session_state.data_fetched_at = None
 if "show_ranker" not in st.session_state:
     st.session_state.show_ranker = False
+if "home_mode" not in st.session_state:
+    st.session_state.home_mode = True
 
 def T(key):
     return TEXTS[st.session_state.lang].get(key, key)
@@ -929,6 +931,53 @@ def fetch_market_digest() -> list:
     # High-impact first, then rest
     unique.sort(key=lambda x: (0 if x["impact"] else 1))
     return unique[:20]
+
+
+_TOP10 = [
+    ("AAPL","Apple"), ("MSFT","Microsoft"), ("NVDA","NVIDIA"),
+    ("AMZN","Amazon"), ("GOOGL","Alphabet"), ("META","Meta"),
+    ("TSLA","Tesla"), ("BRK-B","Berkshire"), ("AVGO","Broadcom"), ("LLY","Eli Lilly"),
+]
+
+@st.cache_data(ttl=300)
+def fetch_top10_prices() -> list:
+    results = []
+    for sym, name in _TOP10:
+        try:
+            fi = yf.Ticker(sym).fast_info
+            cur = float(fi.get("last_price") or fi.get("regularMarketPrice") or 0)
+            prev = float(fi.get("previous_close") or fi.get("regularMarketPreviousClose") or cur)
+            chg = (cur - prev) / prev * 100 if prev else 0
+            results.append({"sym": sym, "name": name, "price": cur, "chg": chg})
+        except:
+            results.append({"sym": sym, "name": name, "price": 0, "chg": 0})
+    return results
+
+def _issue_impact(title: str, lang: str) -> str:
+    t = title.lower()
+    if any(k in t for k in ["rate", "fed", "fomc", "금리", "interest"]):
+        return ("💰 금리 민감주(성장주·부동산) 하락 압력 예상" if lang=="ko"
+                else "💰 Rate-sensitive stocks (growth, REITs) face downward pressure")
+    if any(k in t for k in ["tariff", "trade", "china", "관세", "무역"]):
+        return ("🏭 반도체·IT 수출주 하락, 방산·소재주 혼조" if lang=="ko"
+                else "🏭 Tech/semis export pressure, defense/materials mixed")
+    if any(k in t for k in ["earnings", "beat", "miss", "실적", "revenue"]):
+        return ("📈 해당 기업 실적 서프라이즈 → 주가 단기 급등락 가능" if lang=="ko"
+                else "📈 Earnings surprise → sharp short-term move for the company")
+    if any(k in t for k in ["layoff", "bankruptcy", "cut", "구조조정", "감원"]):
+        return ("⚠️ 해당 섹터 투자심리 위축, 방어주 선호 증가" if lang=="ko"
+                else "⚠️ Sector sentiment weakens, defensive stocks favored")
+    if any(k in t for k in ["ai", "artificial intelligence", "인공지능", "chatgpt", "llm"]):
+        return ("🤖 AI 관련주(NVDA·MSFT·META·GOOGL) 상승 기대" if lang=="ko"
+                else "🤖 AI stocks (NVDA·MSFT·META·GOOGL) upside expected")
+    if any(k in t for k in ["oil", "crude", "energy", "원유", "에너지"]):
+        return ("🛢️ 에너지·정유주 변동성 확대, 항공·운송주 역방향" if lang=="ko"
+                else "🛢️ Energy stocks volatile, airlines/transport move inversely")
+    if any(k in t for k in ["inflation", "cpi", "pce", "인플레"]):
+        return ("📉 인플레 지속 시 금리 인하 지연 → 성장주 약세" if lang=="ko"
+                else "📉 Persistent inflation delays rate cuts → growth stocks weak")
+    return ("📊 시장 전반 주시 필요, 개별 종목 영향 분석 권장" if lang=="ko"
+            else "📊 Monitor broad market; individual stock analysis recommended")
 
 
 def _digest_impact_summary(articles: list, lang: str) -> str:
@@ -2505,6 +2554,7 @@ with st.sidebar:
         st.session_state.show_ranker = not _ranker_active
         if st.session_state.show_ranker:
             st.session_state.sidebar_view = None   # close semi/sector views
+        st.session_state.home_mode = False
         st.rerun()
 
     st.divider()
@@ -2525,6 +2575,7 @@ with st.sidebar:
         val = st.session_state.search_box.strip()
         if val:
             st.session_state.ticker = resolve_ticker(val)
+            st.session_state.home_mode = False
 
     search_input = st.text_input(
         T("search_placeholder"),
@@ -2537,6 +2588,7 @@ with st.sidebar:
         if search_input.strip():
             resolved = resolve_ticker(search_input.strip())
             st.session_state.ticker = resolved
+            st.session_state.home_mode = False
             st.rerun()
 
     # Search hint
@@ -2561,6 +2613,7 @@ with st.sidebar:
                      type="primary" if semi_active else "secondary",
                      key="sb_semi"):
             st.session_state.sidebar_view = None if semi_active else "semi"
+            st.session_state.home_mode = False
             st.rerun()
     with sb_col2:
         sect_active = st.session_state.sidebar_view == "sectors"
@@ -2568,6 +2621,7 @@ with st.sidebar:
                      type="primary" if sect_active else "secondary",
                      key="sb_sectors"):
             st.session_state.sidebar_view = None if sect_active else "sectors"
+            st.session_state.home_mode = False
             st.rerun()
 
     st.divider()
@@ -2639,6 +2693,7 @@ with st.sidebar:
                 label = f"{name} ({ticker_sym})"
                 if st.button(label, key=f"btn_{ticker_sym}", use_container_width=True):
                     st.session_state.ticker = ticker_sym
+                    st.session_state.home_mode = False
                     st.rerun()
 
     st.divider()
@@ -2651,6 +2706,7 @@ with st.sidebar:
                 label = f"{name} ({ticker_sym})"
                 if st.button(label, key=f"gbl_{ticker_sym}", use_container_width=True):
                     st.session_state.ticker = ticker_sym
+                    st.session_state.home_mode = False
                     st.rerun()
 
 # ─── MAIN CONTENT ─────────────────────────────────────────────────────────────
@@ -2664,29 +2720,37 @@ st.markdown(f"""
 """, unsafe_allow_html=True)
 
 # Load data
-with st.spinner(T("loading")):
-    df_2y = get_stock_data(ticker, "2y")
-    df_5y = get_stock_data(ticker, "5y")
-    df_max = get_stock_data(ticker, "max")
-    info = get_stock_info(ticker)
-    macro_data = get_macro_data()
+if not st.session_state.home_mode:
+    with st.spinner(T("loading")):
+        df_2y = get_stock_data(ticker, "2y")
+        df_5y = get_stock_data(ticker, "5y")
+        df_max = get_stock_data(ticker, "max")
+        info = get_stock_info(ticker)
+        macro_data = get_macro_data()
+else:
+    df_2y = pd.DataFrame()
+    df_5y = pd.DataFrame()
+    df_max = pd.DataFrame()
+    info = {}
+    macro_data = {}
 
-# ── Record fetch timestamp ───────────────────────────────────────────────────
-_now_utc = datetime.utcnow()
-st.session_state.data_fetched_at = _now_utc
+if not st.session_state.home_mode:
+    # ── Record fetch timestamp ───────────────────────────────────────────────────
+    _now_utc = datetime.utcnow()
+    st.session_state.data_fetched_at = _now_utc
 
-# Determine market data as-of date (last trading day in price history)
-_market_date_str = ""
-if not df_2y.empty:
-    _last_idx = df_2y.index[-1]
-    _market_date_str = pd.Timestamp(_last_idx).strftime("%Y-%m-%d")
+    # Determine market data as-of date (last trading day in price history)
+    _market_date_str = ""
+    if not df_2y.empty:
+        _last_idx = df_2y.index[-1]
+        _market_date_str = pd.Timestamp(_last_idx).strftime("%Y-%m-%d")
 
-_fetch_str   = _now_utc.strftime("%Y-%m-%d %H:%M") + " UTC"
-_ts_label    = ("주가 기준일" if lang == "ko" else "Price date")
-_ts_fetched  = ("조회 시각"   if lang == "ko" else "Fetched")
-_next_price  = _next_update_label(lang)
+    _fetch_str   = _now_utc.strftime("%Y-%m-%d %H:%M") + " UTC"
+    _ts_label    = ("주가 기준일" if lang == "ko" else "Price date")
+    _ts_fetched  = ("조회 시각"   if lang == "ko" else "Fetched")
+    _next_price  = _next_update_label(lang)
 
-st.markdown(f"""
+    st.markdown(f"""
 <div class="data-timestamp">
     <span class="dot"></span>
     <span>{_ts_label}: <b style='color:#EAEAEA;'>{_market_date_str}</b></span>
@@ -2697,22 +2761,57 @@ st.markdown(f"""
 </div>
 """, unsafe_allow_html=True)
 
-if df_2y.empty:
-    st.error(T("error_ticker"))
-    st.stop()
+    if df_2y.empty:
+        st.error(T("error_ticker"))
+        st.stop()
 
-df_2y = compute_indicators(df_2y)
-df_5y = compute_indicators(df_5y)
+    df_2y = compute_indicators(df_2y)
+    df_5y = compute_indicators(df_5y)
 
-# Company header
-company_name = info.get("shortName", ticker)
-current_price = info.get("currentPrice") or info.get("regularMarketPrice") or info.get("previousClose", 0)
-prev_close = info.get("previousClose", current_price)
-change_1d = ((current_price - prev_close) / prev_close * 100) if prev_close else 0
-change_color = "#FF4040" if change_1d >= 0 else "#4488FF"
-change_arrow = "▲" if change_1d >= 0 else "▼"
 
-st.markdown(f"""
+# ══════════════════ HOME DASHBOARD ══════════════════
+if st.session_state.home_mode and not st.session_state.show_ranker and st.session_state.sidebar_view is None:
+    _hdr = "📈 시장 현황" if lang == "ko" else "📈 Today's Market"
+    st.markdown(f"<div class='section-header' style='font-size:1.4rem;margin-bottom:16px;'>{_hdr}</div>",
+                unsafe_allow_html=True)
+    with st.spinner("로딩 중..." if lang == "ko" else "Loading..."):
+        _top10_data = fetch_top10_prices()
+    _t10_cols = st.columns(5)
+    for _i, _row in enumerate(_top10_data):
+        _cc = "#FF4040" if _row["chg"] >= 0 else "#4488FF"
+        _ar = "▲" if _row["chg"] >= 0 else "▼"
+        with _t10_cols[_i % 5]:
+            if st.button(f"{_row['name']} ({_row['sym']})", key=f"home_t10_{_row['sym']}", use_container_width=True):
+                st.session_state.ticker = _row["sym"]
+                st.session_state.home_mode = False
+                st.rerun()
+            st.markdown(f"<div style='margin-top:-12px;margin-bottom:10px;text-align:center;font-size:0.85rem;color:#EAEAEA;'><b>${_row['price']:,.2f}</b> <span style='color:{_cc};font-weight:700;'>{_ar}{abs(_row['chg']):.2f}%</span></div>", unsafe_allow_html=True)
+    st.markdown("<hr style='border-color:#1E2130;margin:20px 0;'>", unsafe_allow_html=True)
+    _news_hdr = "📰 오늘의 주요 이슈 & 주가 영향 분석" if lang == "ko" else "📰 Today's Key Issues & Market Impact"
+    st.markdown(f"<div class='section-header' style='font-size:1.2rem;margin-bottom:12px;'>{_news_hdr}</div>", unsafe_allow_html=True)
+    with st.spinner("뉴스 로딩 중..." if lang == "ko" else "Loading news..."):
+        _home_news = fetch_market_digest()
+    if _home_news:
+        for _art in _home_news[:10]:
+            _title = _art.get("title", "")
+            _src   = _art.get("source", "")
+            _imp   = _issue_impact(_title, lang)
+            _high  = is_high_impact(_title, _art.get("summary", ""))
+            _badge = "<span style='background:#FF4040;color:#fff;border-radius:4px;padding:1px 6px;font-size:0.7rem;margin-right:6px;'>🔥 HOT</span>" if _high else ""
+            st.markdown(f"""<div style='background:#111528;border:1px solid #1E2140;border-radius:10px;padding:12px 16px;margin-bottom:10px;'><div style='font-size:0.9rem;font-weight:600;color:#EAEAEA;margin-bottom:6px;'>{_badge}{_title}</div><div style='font-size:0.78rem;color:#8B9DB0;margin-bottom:6px;'>{_src}</div><div style='font-size:0.82rem;color:#FFD700;border-top:1px solid #1E2140;padding-top:6px;'>{_imp}</div></div>""", unsafe_allow_html=True)
+    else:
+        st.info("뉴스를 불러오는 중입니다..." if lang == "ko" else "Loading news...")
+
+if not st.session_state.home_mode:
+    # Company header
+    company_name = info.get("shortName", ticker)
+    current_price = info.get("currentPrice") or info.get("regularMarketPrice") or info.get("previousClose", 0)
+    prev_close = info.get("previousClose", current_price)
+    change_1d = ((current_price - prev_close) / prev_close * 100) if prev_close else 0
+    change_color = "#FF4040" if change_1d >= 0 else "#4488FF"
+    change_arrow = "▲" if change_1d >= 0 else "▼"
+
+    st.markdown(f"""
 <div style='background:linear-gradient(135deg,#1E2130,#16213E);border-radius:14px;padding:20px 28px;margin-bottom:20px;border:1px solid #2E3250;'>
     <div style='display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;'>
         <div>
@@ -2728,26 +2827,26 @@ st.markdown(f"""
 </div>
 """, unsafe_allow_html=True)
 
-# Key metrics row
-mkt_cap = info.get("marketCap", 0)
-mkt_cap_str = f"${mkt_cap/1e12:.2f}T" if mkt_cap > 1e12 else f"${mkt_cap/1e9:.1f}B" if mkt_cap > 1e9 else f"${mkt_cap/1e6:.0f}M" if mkt_cap else "N/A"
-volume = info.get("volume") or info.get("regularMarketVolume", 0)
-vol_str = f"{volume/1e6:.1f}M" if volume > 1e6 else f"{volume/1e3:.0f}K" if volume else "N/A"
-pe = info.get("trailingPE", info.get("forwardPE", 0))
-w52h = info.get("fiftyTwoWeekHigh", 0)
-w52l = info.get("fiftyTwoWeekLow", 0)
+    # Key metrics row
+    mkt_cap = info.get("marketCap", 0)
+    mkt_cap_str = f"${mkt_cap/1e12:.2f}T" if mkt_cap > 1e12 else f"${mkt_cap/1e9:.1f}B" if mkt_cap > 1e9 else f"${mkt_cap/1e6:.0f}M" if mkt_cap else "N/A"
+    volume = info.get("volume") or info.get("regularMarketVolume", 0)
+    vol_str = f"{volume/1e6:.1f}M" if volume > 1e6 else f"{volume/1e3:.0f}K" if volume else "N/A"
+    pe = info.get("trailingPE", info.get("forwardPE", 0))
+    w52h = info.get("fiftyTwoWeekHigh", 0)
+    w52l = info.get("fiftyTwoWeekLow", 0)
 
-mcol1, mcol2, mcol3, mcol4, mcol5, mcol6 = st.columns(6)
-metrics = [
-    (gl("Market Cap" if lang=="en" else "시가총액", T("mkt_cap")), mkt_cap_str, ""),
-    (gl("Volume" if lang=="en" else "거래량", T("volume")), vol_str, ""),
-    (gl("P/E Ratio" if lang=="en" else "주가수익비율(P/E)", T("pe_ratio")), f"{pe:.1f}" if pe else "N/A", ""),
-    (gl("52-Week High" if lang=="en" else "52주 최고가", T("week52_high")), f"${w52h:,.2f}" if w52h else "N/A", ""),
-    (gl("52-Week Low" if lang=="en" else "52주 최저가", T("week52_low")), f"${w52l:,.2f}" if w52l else "N/A", ""),
-    (gl("Volatility (Annualized)" if lang=="en" else "변동성 (연율화)", T("volatility")), f"{df_2y['close'].pct_change().std() * np.sqrt(252) * 100:.1f}%" if 'close' in df_2y.columns else "N/A", ""),
-]
-for col, (label, val, change) in zip([mcol1, mcol2, mcol3, mcol4, mcol5, mcol6], metrics):
-    col.markdown(f"""
+    mcol1, mcol2, mcol3, mcol4, mcol5, mcol6 = st.columns(6)
+    metrics = [
+        (gl("Market Cap" if lang=="en" else "시가총액", T("mkt_cap")), mkt_cap_str, ""),
+        (gl("Volume" if lang=="en" else "거래량", T("volume")), vol_str, ""),
+        (gl("P/E Ratio" if lang=="en" else "주가수익비율(P/E)", T("pe_ratio")), f"{pe:.1f}" if pe else "N/A", ""),
+        (gl("52-Week High" if lang=="en" else "52주 최고가", T("week52_high")), f"${w52h:,.2f}" if w52h else "N/A", ""),
+        (gl("52-Week Low" if lang=="en" else "52주 최저가", T("week52_low")), f"${w52l:,.2f}" if w52l else "N/A", ""),
+        (gl("Volatility (Annualized)" if lang=="en" else "변동성 (연율화)", T("volatility")), f"{df_2y['close'].pct_change().std() * np.sqrt(252) * 100:.1f}%" if 'close' in df_2y.columns else "N/A", ""),
+    ]
+    for col, (label, val, change) in zip([mcol1, mcol2, mcol3, mcol4, mcol5, mcol6], metrics):
+        col.markdown(f"""
     <div class='metric-card'>
         <div class='metric-label'>{label}</div>
         <div class='metric-value' style='font-size:1.1rem;'>{val}</div>
@@ -2757,11 +2856,11 @@ for col, (label, val, change) in zip([mcol1, mcol2, mcol3, mcol4, mcol5, mcol6],
 # ─── TABS (only shown when no sidebar panel is active) ────────────────────────
 from contextlib import nullcontext as _nctx
 _show_tabs = st.session_state.sidebar_view is None
-if _show_tabs:
+if not st.session_state.home_mode and _show_tabs:
     tabs = st.tabs([T("tab_overview"), T("tab_predict"), T("tab_news"), T("tab_geo"), T("tab_history"), T("tab_company"), T("tab_relations"), T("tab_invest")])
 
 # ══════════════════ TAB 1: OVERVIEW ══════════════════
-if _show_tabs:
+if not st.session_state.home_mode and _show_tabs:
     with tabs[0]:
         # Price chart period selector
         period_map = {
@@ -5134,7 +5233,7 @@ if st.session_state.sidebar_view == "sectors":
         """, unsafe_allow_html=True)
 
 # ══════════════════ TAB 8: INVESTMENT ANALYSIS ══════════════════
-if _show_tabs:
+if not st.session_state.home_mode and _show_tabs:
     with tabs[7]:
         lang_inv = st.session_state.lang
         st.markdown(f"<div class='section-header'>{'📈 투자 분석 대시보드' if lang_inv=='ko' else '📈 Investment Analysis Dashboard'}</div>", unsafe_allow_html=True)
