@@ -887,10 +887,29 @@ def is_high_impact(title: str, summary: str) -> bool:
 
 @st.cache_data(ttl=6*3600)
 @st.cache_data(ttl=6*3600)
+def _translate_ko(text: str) -> str:
+    """Translate text to Korean via Google Translate free endpoint (no key needed)."""
+    if not text:
+        return text
+    try:
+        url = "https://translate.googleapis.com/translate_a/single"
+        params = {"client": "gtx", "sl": "auto", "tl": "ko", "dt": "t", "q": text[:500]}
+        r = requests.get(url, params=params, timeout=6,
+                         headers={"User-Agent": "Mozilla/5.0"})
+        if r.status_code == 200:
+            data = r.json()
+            return "".join(part[0] for part in data[0] if part[0])
+    except Exception:
+        pass
+    return text
+
+
+@st.cache_data(ttl=6*3600)
 def fetch_market_digest() -> list:
     """
     Fetch today's top market-moving headlines.
-    Splits into 국내(Korean) and 해외(International) sources.
+    국내(Korean) sources kept as-is; 해외(International) titles & summaries
+    are auto-translated to Korean via Google Translate.
     Returns items sorted: high-impact first.
     """
     _rss_intl = [
@@ -921,6 +940,11 @@ def fetch_market_digest() -> list:
                 pubdate = item.findtext("pubDate", "")[:25]
                 if not title:
                     continue
+                # Translate international articles to Korean
+                if region == "intl":
+                    title = _translate_ko(title)
+                    if desc:
+                        desc = _translate_ko(desc)
                 articles.append({
                     "title":     title,
                     "summary":   desc,
@@ -2740,9 +2764,8 @@ if not st.session_state.home_mode:
 
 # ══════════════════ HOME DASHBOARD ══════════════════
 if st.session_state.home_mode and not st.session_state.show_ranker and st.session_state.sidebar_view is None:
-    _news_hdr = "📰 오늘의 주요 이슈 & 주가 영향 분석" if lang == "ko" else "📰 Today's Key Issues & Market Impact"
-    st.markdown(f"<div class='section-header' style='font-size:1.4rem;margin-bottom:16px;'>{_news_hdr}</div>", unsafe_allow_html=True)
-    with st.spinner("뉴스 로딩 중..." if lang == "ko" else "Loading news..."):
+    st.markdown("<div class='section-header' style='font-size:1.4rem;margin-bottom:16px;'>📰 오늘의 주요 이슈 & 주가 영향 분석</div>", unsafe_allow_html=True)
+    with st.spinner("뉴스 불러오는 중..."):
         _home_news = fetch_market_digest()
 
     _num_emojis = ["1️⃣","2️⃣","3️⃣","4️⃣","5️⃣","6️⃣","7️⃣","8️⃣","9️⃣","🔟"]
@@ -2752,7 +2775,7 @@ if st.session_state.home_mode and not st.session_state.show_ranker and st.sessio
             return
         st.markdown(
             f"<div style='font-size:1rem;font-weight:800;color:#8B9DB0;margin:16px 0 10px 0;"
-            f"text-transform:uppercase;letter-spacing:1px;'>{section_label}</div>",
+            f"letter-spacing:1px;'>{section_label}</div>",
             unsafe_allow_html=True
         )
         for _ni, _art in enumerate(articles):
@@ -2761,29 +2784,31 @@ if st.session_state.home_mode and not st.session_state.show_ranker and st.sessio
             _link  = _art.get("link","#")
             _src   = _art.get("source","")
             _pub   = (_art.get("published","") or "")[:10]
-            _imp   = _issue_impact(_title, lang)
+            _imp   = _issue_impact(_title, "ko")   # 항상 한글로 영향 분석
             _high  = _art.get("impact", False)
             _enum  = _num_emojis[(_ni + emoji_offset) % 10]
             _hot   = ("<span style='background:#FF4040;color:#fff;border-radius:4px;"
                       "padding:1px 7px;font-size:0.68rem;font-weight:700;margin-left:6px;"
                       "vertical-align:middle;'>HOT</span>" if _high else "")
-            # desc truncated to ~200 chars
-            _desc_short = (_desc[:200] + "...") if len(_desc) > 200 else _desc
+            _desc_short = (_desc[:250] + "...") if len(_desc) > 250 else _desc
+            _region_badge = ("<span style='color:#64B5F6;font-size:0.68rem;margin-right:4px;'>[해외]</span>"
+                             if _art.get("region") == "intl" else "")
             st.markdown(f"""
 <div style='background:#111528;border:1px solid #1E2140;border-radius:12px;
             padding:16px 18px;margin-bottom:12px;'>
   <div style='font-size:1rem;font-weight:700;color:#EAEAEA;margin-bottom:8px;line-height:1.4;'>
     {_enum} {_title}{_hot}
   </div>
-  <div style='font-size:0.82rem;color:#8B9DB0;line-height:1.6;margin-bottom:10px;'>
-    {_desc_short}
+  <div style='font-size:0.83rem;color:#B0BEC5;line-height:1.7;margin-bottom:10px;
+              background:rgba(255,255,255,0.03);border-radius:6px;padding:8px 10px;'>
+    📝 <b style="color:#8B9DB0;">내용 요약:</b> {_desc_short if _desc_short else "본문 내용을 불러올 수 없습니다."}
   </div>
   <div style='font-size:0.83rem;color:#FFD700;background:rgba(255,215,0,0.07);
               border-radius:6px;padding:7px 10px;margin-bottom:10px;'>
     📌 <b>주가 영향:</b> {_imp}
   </div>
   <div style='display:flex;align-items:center;justify-content:space-between;'>
-    <span style='font-size:0.72rem;color:#4A5568;'>{_src}{" · " + _pub if _pub else ""}</span>
+    <span style='font-size:0.72rem;color:#4A5568;'>{_region_badge}{_src}{" · " + _pub if _pub else ""}</span>
     {"<a href='" + _link + "' target='_blank' style='font-size:0.78rem;color:#4FC3F7;text-decoration:none;font-weight:600;'>자세히 보기 👉</a>" if _link and _link != "#" else ""}
   </div>
 </div>""", unsafe_allow_html=True)
@@ -2791,8 +2816,8 @@ if st.session_state.home_mode and not st.session_state.show_ranker and st.sessio
     if _home_news:
         _ko_news   = [a for a in _home_news if a.get("region") == "ko"][:8]
         _intl_news = [a for a in _home_news if a.get("region") != "ko"][:8]
-        _render_news_section(_ko_news,   "🇰🇷 국내 주요 이슈" if lang=="ko" else "🇰🇷 Korea", 0)
-        _render_news_section(_intl_news, "🌐 해외 주요 이슈" if lang=="ko" else "🌐 International", len(_ko_news))
+        _render_news_section(_ko_news,   "🇰🇷 국내 주요 이슈", 0)
+        _render_news_section(_intl_news, "🌐 해외 주요 이슈", len(_ko_news))
     else:
         st.info("뉴스를 불러오는 중입니다..." if lang == "ko" else "Loading news...")
 
