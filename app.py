@@ -2521,11 +2521,17 @@ with st.sidebar:
     st.divider()
 
     # Search
+    def _do_search():
+        val = st.session_state.search_box.strip()
+        if val:
+            st.session_state.ticker = resolve_ticker(val)
+
     search_input = st.text_input(
         T("search_placeholder"),
         placeholder=T("search_placeholder"),
         label_visibility="collapsed",
         key="search_box",
+        on_change=_do_search,
     )
     if st.button(T("search_btn"), use_container_width=True, type="primary"):
         if search_input.strip():
