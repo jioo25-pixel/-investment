@@ -2637,63 +2637,8 @@ with st.sidebar:
 
     st.divider()
 
-    # ── Daily Market Digest ────────────────────────────────────────────────────
-    _digest_label = "📰 오늘의 주요 이슈" if lang == "ko" else "📰 Daily Market Digest"
-    with st.expander(_digest_label, expanded=True):
-        _digest_news = fetch_market_digest()
-        _high = [a for a in _digest_news if a["impact"]][:7]
-        _low  = [a for a in _digest_news if not a["impact"]][:3]
-        _show = _high + _low
 
-        if _show:
-            for art in _show:
-                _imp_badge = (
-                    "<span style='color:#FF4040;font-size:0.65rem;font-weight:700;"
-                    "border:1px solid #FF4040;border-radius:8px;padding:1px 5px;"
-                    "margin-right:4px;'>HOT</span>"
-                    if art["impact"] else ""
-                )
-                _t = art["title"]
-                _pub = art["published"][:10] if art["published"] else ""
-                _src = art["source"]
-                st.markdown(
-                    f"<div style='padding:6px 0;border-bottom:1px solid #1E2130;'>"
-                    f"  {_imp_badge}"
-                    f"  <a href='{art['link']}' target='_blank' "
-                    f"     style='color:#D0D8E8;font-size:0.78rem;text-decoration:none;"
-                    f"             line-height:1.4;'>{_t}</a>"
-                    f"  <div style='color:#4A5568;font-size:0.68rem;margin-top:2px;'>"
-                    f"    {_src} · {_pub}</div>"
-                    f"</div>",
-                    unsafe_allow_html=True
-                )
 
-            # Impact summary
-            _sum = _digest_impact_summary(_show, lang)
-            if _sum:
-                _imp_hdr = "📊 오늘의 시장 영향 요약" if lang == "ko" else "📊 Today's Market Impact"
-                st.markdown(
-                    f"<div style='background:#0F1527;border-left:3px solid #FFA500;"
-                    f"border-radius:0 8px 8px 0;padding:8px 10px;margin-top:8px;'>"
-                    f"  <div style='color:#FFA500;font-size:0.72rem;font-weight:700;"
-                    f"             margin-bottom:4px;'>{_imp_hdr}</div>"
-                    f"  <div style='color:#B0BEC5;font-size:0.75rem;line-height:1.5;'>"
-                    f"    {_sum}</div>"
-                    f"</div>",
-                    unsafe_allow_html=True
-                )
-
-            # Next news update countdown
-            _news_nxt = _next_news_update_label(lang)
-            st.markdown(
-                f"<div style='color:#4A5568;font-size:0.65rem;margin-top:6px;"
-                f"text-align:right;'>🕐 {_news_nxt}</div>",
-                unsafe_allow_html=True
-            )
-        else:
-            st.caption("뉴스 로딩 중..." if lang == "ko" else "Loading digest...")
-
-    st.divider()
 
     # S&P 500 by sector
     st.markdown(f"**{T('sp500_list')}**")
