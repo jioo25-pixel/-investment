@@ -961,6 +961,24 @@ def generate_2line_summary(ticker: str, df: pd.DataFrame, info: dict, lang: str)
     return f"{line1}\n\n{line2}"
 
 # ─── CHART BUILDERS ───────────────────────────────────────────────────────────
+def _rangeselector(lang: str = "en") -> dict:
+    """Standard time-range selector buttons for all date-axis charts."""
+    return dict(
+        buttons=[
+            dict(count=1,  label="1D", step="day",   stepmode="backward"),
+            dict(count=1,  label="1M", step="month", stepmode="backward"),
+            dict(count=6,  label="6M", step="month", stepmode="backward"),
+            dict(count=1,  label="1Y", step="year",  stepmode="backward"),
+            dict(count=3,  label="3Y", step="year",  stepmode="backward"),
+            dict(count=5,  label="5Y", step="year",  stepmode="backward"),
+            dict(step="all", label="ALL"),
+        ],
+        bgcolor="#1E2130",
+        activecolor="#FFA500",
+        font=dict(color="#FFFFFF", size=11),
+        x=0, y=1.02,
+    )
+
 def build_price_chart(df: pd.DataFrame, ticker: str, lang: str) -> go.Figure:
     if df.empty:
         return go.Figure()
@@ -1159,10 +1177,15 @@ def build_forecast_chart(
         height=500,
         title=dict(text=T("pred_title"), font=dict(size=18)),
         showlegend=True,
-        legend=dict(orientation="h", y=1.02),
-        xaxis_title="Date" if lang == "en" else "날짜",
+        legend=dict(orientation="h", y=1.12),
+        xaxis=dict(
+            rangeselector=_rangeselector(lang),
+            rangeslider=dict(visible=False),
+            type="date",
+            title="Date" if lang == "en" else "날짜",
+        ),
         yaxis_title="Price (USD)" if lang == "en" else "주가 (USD)",
-        margin=dict(l=0, r=0, t=50, b=0),
+        margin=dict(l=0, r=0, t=70, b=0),
         plot_bgcolor="#0E1117",
         paper_bgcolor="#0E1117",
     )
@@ -1211,9 +1234,14 @@ def build_geo_timeline(lang: str) -> go.Figure:
     fig.update_layout(
         template="plotly_dark",
         title=T("geopolitical_events") if lang == "en" else "지정학적 주요 이벤트 & 증시 영향",
-        height=420,
+        height=450,
+        xaxis=dict(
+            rangeselector=_rangeselector(lang),
+            rangeslider=dict(visible=False),
+            type="date",
+        ),
         yaxis_title="Market Impact (%)" if lang == "en" else "증시 영향 (%)",
-        margin=dict(l=0, r=0, t=50, b=20),
+        margin=dict(l=0, r=0, t=70, b=20),
         plot_bgcolor="#0E1117",
         paper_bgcolor="#0E1117",
     )
@@ -1842,11 +1870,16 @@ with tabs[4]:
 
         fig_hist.update_layout(
             template="plotly_dark",
-            height=550,
+            height=580,
             title=f"{company_name} — {'Full History with Key Events' if lang == 'en' else '전체 역사 & 주요 이벤트'}",
-            xaxis_title="Date" if lang == "en" else "날짜",
+            xaxis=dict(
+                rangeselector=_rangeselector(lang),
+                rangeslider=dict(visible=False),
+                type="date",
+                title="Date" if lang == "en" else "날짜",
+            ),
             yaxis_title="Price (USD)" if lang == "en" else "주가 (USD)",
-            margin=dict(l=0, r=0, t=50, b=0),
+            margin=dict(l=0, r=0, t=70, b=0),
             plot_bgcolor="#0E1117",
             paper_bgcolor="#0E1117",
         )
