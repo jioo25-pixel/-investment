@@ -2451,8 +2451,15 @@ with tabs[6]:
             for sup_name, role, importance, color in relations.get("suppliers"+suffix, []):
                 imp_width = {"Critical":100,"핵심":100,"High":75,"높음":75,"Medium":50,"중간":50,"Low":25,"낮음":25,"Historical":15,"과거":15}
                 w = imp_width.get(importance, 50)
+                _clean = sup_name.split("(")[0].strip()
+                _sym = resolve_ticker(_clean)
+                _btn_key = f"rel_sup_{ticker}_{sup_name[:20]}"
+                if st.button(f"📈 {sup_name}", key=_btn_key, use_container_width=True):
+                    st.session_state.ticker = _sym
+                    st.session_state.sidebar_view = None
+                    st.rerun()
                 st.markdown(f"""
-                <div style='background:#1A1F35;border-radius:10px;padding:14px 18px;margin-bottom:10px;border:1px solid {color}40;'>
+                <div style='background:#1A1F35;border-radius:10px;padding:14px 18px;margin:-8px 0 10px 0;border:1px solid {color}40;'>
                     <div style='display:flex;justify-content:space-between;align-items:center;'>
                         <span style='font-weight:700;color:#FFFFFF;'>🏭 {sup_name}</span>
                         <span style='color:{color};font-weight:700;background:{color}20;padding:2px 10px;border-radius:12px;font-size:0.8rem;'>{importance}</span>
@@ -2465,15 +2472,33 @@ with tabs[6]:
         with rel_tabs[1]:
             cc1, cc2 = st.columns(2)
             for i, (comp_name, comp_desc) in enumerate(relations.get("competitors"+suffix, [])):
-                (cc1 if i%2==0 else cc2).markdown(f"""
-                <div class='geo-card' style='border-left:3px solid #FF4B4B;'>
-                    <div style='font-weight:700;color:#FF6B6B;'>⚔️ {comp_name}</div>
-                    <div style='color:#B0BEC5;font-size:0.82rem;margin-top:6px;'>{comp_desc}</div>
-                </div>""", unsafe_allow_html=True)
+                _clean = comp_name.split("/")[0].split("(")[0].strip()
+                _sym = resolve_ticker(_clean)
+                _btn_key = f"rel_comp_{ticker}_{comp_name[:20]}"
+                target_col = cc1 if i%2==0 else cc2
+                with target_col:
+                    if st.button(f"📈 {comp_name}", key=_btn_key, use_container_width=True):
+                        st.session_state.ticker = _sym
+                        st.session_state.sidebar_view = None
+                        st.rerun()
+                    st.markdown(f"""
+                    <div class='geo-card' style='border-left:3px solid #FF4B4B;margin:-8px 0 8px 0;'>
+                        <div style='font-weight:700;color:#FF6B6B;'>⚔️ {comp_name}</div>
+                        <div style='color:#B0BEC5;font-size:0.82rem;margin-top:6px;'>{comp_desc}</div>
+                    </div>""", unsafe_allow_html=True)
         with rel_tabs[2]:
             for cust_name, cust_desc in relations.get("customers"+suffix, []):
+                _clean = cust_name.split("(")[0].strip()
+                _sym = resolve_ticker(_clean)
+                _is_generic = _sym == _clean.upper() and len(_sym) > 6
+                _btn_key = f"rel_cust_{ticker}_{cust_name[:20]}"
+                if not _is_generic:
+                    if st.button(f"📈 {cust_name}", key=_btn_key, use_container_width=True):
+                        st.session_state.ticker = _sym
+                        st.session_state.sidebar_view = None
+                        st.rerun()
                 st.markdown(f"""
-                <div class='geo-card' style='border-left:3px solid #00D4AA;'>
+                <div class='geo-card' style='border-left:3px solid #00D4AA;{'margin:-8px 0 8px 0;' if not _is_generic else ''}'>
                     <div style='font-weight:700;color:#00D4AA;'>👥 {cust_name}</div>
                     <div style='color:#B0BEC5;font-size:0.82rem;margin-top:6px;'>{cust_desc}</div>
                 </div>""", unsafe_allow_html=True)
@@ -2486,8 +2511,17 @@ with tabs[6]:
                 </div>""", unsafe_allow_html=True)
         with rel_tabs[4]:
             for sub_name, sub_desc in relations.get("subsidiaries"+suffix, []):
+                _clean = sub_name.split("(")[0].strip()
+                _sym = resolve_ticker(_clean)
+                _is_generic = _sym == _clean.upper() and len(_sym) > 8
+                _btn_key = f"rel_sub_{ticker}_{sub_name[:20]}"
+                if not _is_generic:
+                    if st.button(f"📈 {sub_name}", key=_btn_key, use_container_width=True):
+                        st.session_state.ticker = _sym
+                        st.session_state.sidebar_view = None
+                        st.rerun()
                 st.markdown(f"""
-                <div class='geo-card' style='border-left:3px solid #AB63FA;'>
+                <div class='geo-card' style='border-left:3px solid #AB63FA;{'margin:-8px 0 8px 0;' if not _is_generic else ''}'>
                     <div style='font-weight:700;color:#AB63FA;'>🏢 {sub_name}</div>
                     <div style='color:#B0BEC5;font-size:0.82rem;margin-top:6px;'>{sub_desc}</div>
                 </div>""", unsafe_allow_html=True)
@@ -2798,28 +2832,23 @@ if st.session_state.sidebar_view == "semi":
                     flag = flag_map.get(t_country, "🌐")
 
                     with col_s:
-                        clickable = st.button(
-                            f"{t_name} ({t_sym})",
+                        if st.button(
+                            f"📈 {t_name}  {price_str}  {chg_arrow}{abs(live_chg):.1f}%",
                             key=f"semi_{cat_key}_{t_sym}",
                             use_container_width=True,
-                        )
-                        if clickable:
+                            help=f"{t_role} | {flag} {t_country} | 클릭하면 분석으로 이동",
+                        ):
                             st.session_state.ticker = t_sym
+                            st.session_state.sidebar_view = None
                             st.rerun()
                         st.markdown(f"""
-                        <div style='background:#1A1F35;border:1px solid {color}40;border-radius:10px;
-                                    padding:12px 14px;margin-bottom:12px;margin-top:-8px;'>
+                        <div style='background:#1A1F35;border:1px solid {color}40;border-radius:0 0 10px 10px;
+                                    padding:8px 14px 12px 14px;margin-bottom:12px;margin-top:-8px;'>
                             <div style='display:flex;justify-content:space-between;align-items:center;'>
-                                <span style='color:{color};font-weight:700;font-size:0.85rem;'>{t_sym}</span>
-                                <span style='font-size:0.8rem;color:#8B9DB0;'>{flag} {t_country}</span>
+                                <span style='color:{color};font-weight:700;font-size:0.82rem;'>{t_sym}</span>
+                                <span style='font-size:0.78rem;color:#8B9DB0;'>{flag} {t_country}</span>
                             </div>
-                            <div style='color:#B0BEC5;font-size:0.78rem;margin:4px 0 8px 0;'>{t_role}</div>
-                            <div style='display:flex;justify-content:space-between;align-items:center;'>
-                                <span style='font-size:1rem;font-weight:700;color:#FFFFFF;'>{price_str}</span>
-                                <span style='color:{chg_color};font-size:0.85rem;font-weight:600;'>
-                                    {chg_arrow} {abs(live_chg):.2f}%
-                                </span>
-                            </div>
+                            <div style='color:#B0BEC5;font-size:0.75rem;margin-top:3px;'>{t_role}</div>
                         </div>
                         """, unsafe_allow_html=True)
 
@@ -3550,25 +3579,23 @@ if st.session_state.sidebar_view == "sectors":
 
                     with card_col:
                         if st.button(
-                            f"📈 {name}",
+                            f"📈 {name}  {price_display}  {arrow_s}{abs(chg_s):.1f}%",
                             key=f"co_btn_{sector_data['id']}_{sym}",
                             use_container_width=True,
                             type="primary",
+                            help=f"{sym} | {role} | {flag} | 클릭하면 분석으로 이동",
                         ):
                             st.session_state.ticker = sym
+                            st.session_state.sidebar_view = None
                             st.rerun()
                         st.markdown(f"""
                         <div style='background:#0F1527;border:1px solid {color_s}50;
-                                    border-radius:10px;padding:10px 12px;margin:-8px 0 12px 0;'>
+                                    border-radius:0 0 10px 10px;padding:6px 12px 10px 12px;margin:-8px 0 12px 0;'>
                             <div style='display:flex;justify-content:space-between;'>
-                                <span style='color:{color_s};font-size:0.78rem;font-weight:700;'>{sym}</span>
-                                <span style='font-size:0.8rem;'>{flag}</span>
+                                <span style='color:{color_s};font-size:0.76rem;font-weight:700;'>{sym}</span>
+                                <span style='font-size:0.78rem;'>{flag}</span>
                             </div>
-                            <div style='color:#8B9DB0;font-size:0.72rem;margin:3px 0;'>{role}</div>
-                            <div style='display:flex;justify-content:space-between;margin-top:6px;'>
-                                <span style='color:#FFFFFF;font-size:0.9rem;font-weight:700;'>{price_display}</span>
-                                <span style='color:{chg_c};font-size:0.78rem;'>{arrow_s}{abs(chg_s):.2f}%</span>
-                            </div>
+                            <div style='color:#8B9DB0;font-size:0.7rem;margin-top:2px;'>{role}</div>
                         </div>
                         """, unsafe_allow_html=True)
 
