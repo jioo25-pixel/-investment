@@ -719,44 +719,180 @@ def get_macro_data() -> dict:
             pass
     return result
 
-@st.cache_data(ttl=1800)
-def fetch_news(lang: str = "en") -> list:
-    feeds = [
+@st.cache_data(ttl=300)
+def fetch_company_news(ticker: str, company_name: str) -> list:
+    """Fetch news specifically about the given ticker/company. Uses yfinance first, then RSS."""
+    articles = []
+
+    # 1. yfinance built-in news (most directly relevant)
+    try:
+        yf_news = yf.Ticker(ticker).news or []
+        for item in yf_news[:20]:
+            content = item.get("content", {})
+            title   = content.get("title", "") or item.get("title", "")
+            link    = content.get("canonicalUrl", {}).get("url", "") or item.get("link", "")
+            summary = content.get("summary", "") or item.get("summary", "")
+            publisher = content.get("provider", {}).get("displayName", "") or item.get("publisher", "")
+            pub_ts  = content.get("pubDate", "") or ""
+            if not pub_ts:
+                raw_ts = item.get("providerPublishTime", 0)
+                pub_ts = datetime.utcfromtimestamp(raw_ts).strftime("%Y-%m-%d %H:%M") if raw_ts else ""
+            title   = re.sub(r"<[^>]+>", "", str(title)).strip()
+            summary = re.sub(r"<[^>]+>", "", str(summary))[:250].strip()
+            if title:
+                articles.append({
+                    "title": title, "summary": summary,
+                    "link": link, "published": str(pub_ts)[:16],
+                    "source": publisher, "relevance": "direct",
+                })
+    except Exception:
+        pass
+
+    # 2. RSS feeds — strictly filter to company mentions only
+    _rss_feeds = [
         ("https://feeds.reuters.com/reuters/businessNews", "Reuters"),
         ("https://feeds.marketwatch.com/marketwatch/topstories/", "MarketWatch"),
         ("https://finance.yahoo.com/news/rssindex", "Yahoo Finance"),
         ("https://www.cnbc.com/id/10001147/device/rss/rss.html", "CNBC"),
-        ("https://rss.nytimes.com/services/xml/rss/nyt/Business.xml", "NYT Business"),
     ]
-    articles = []
+    ticker_clean   = ticker.lower().replace("^", "").replace("=f", "")
+    company_words  = [w.lower() for w in re.split(r"[\s,\.]+", company_name) if len(w) > 3][:4]
     headers = {"User-Agent": "Mozilla/5.0 (compatible; MarketIntel/1.0)"}
-    for url, source_name in feeds:
+    for url, src in _rss_feeds:
         try:
             resp = requests.get(url, timeout=8, headers=headers)
             if resp.status_code != 200:
                 continue
             root = ET.fromstring(resp.content)
-            ns = {"media": "http://search.yahoo.com/mrss/"}
-            items = root.findall(".//item")
-            for item in items[:6]:
-                title = item.findtext("title", "").strip()
-                link = item.findtext("link", "").strip()
-                desc = item.findtext("description", "").strip()
-                pubdate = item.findtext("pubDate", "").strip()
-                # Clean HTML
-                desc = re.sub(r"<[^>]+>", "", desc)[:200]
-                title = re.sub(r"<[^>]+>", "", title)
-                if title:
+            for item in root.findall(".//item")[:15]:
+                title   = re.sub(r"<[^>]+>", "", item.findtext("title",  "")).strip()
+                desc    = re.sub(r"<[^>]+>", "", item.findtext("description", ""))[:250].strip()
+                link    = item.findtext("link", "").strip()
+                pubdate = item.findtext("pubDate", "")[:25]
+                tl = (title + " " + desc).lower()
+                if ticker_clean in tl or any(w in tl for w in company_words):
                     articles.append({
-                        "title": title,
-                        "summary": desc,
-                        "link": link,
-                        "published": pubdate[:25] if pubdate else "",
-                        "source": source_name,
+                        "title": title, "summary": desc,
+                        "link": link, "published": pubdate,
+                        "source": src, "relevance": "direct",
                     })
         except Exception:
             continue
-    return articles[:30]
+
+    # Deduplicate by title prefix
+    seen, unique = set(), []
+    for art in articles:
+        key = art["title"][:60].lower()
+        if key not in seen:
+            seen.add(key)
+            unique.append(art)
+    return unique[:25]
+
+
+@st.cache_data(ttl=300)
+def fetch_geo_news(ticker: str, sector: str, industry: str) -> list:
+    """Fetch recent geopolitical/macro news relevant to company sector."""
+    # Sector → search keywords
+    SECTOR_KW = {
+        "Technology":              ["china tariff", "semiconductor export", "AI regulation", "chip ban", "antitrust tech"],
+        "Communication Services":  ["china tariff", "AI regulation", "antitrust", "streaming", "social media"],
+        "Consumer Discretionary":  ["tariff consumer", "china trade", "inflation retail", "consumer spending"],
+        "Consumer Staples":        ["inflation food", "supply chain", "tariff consumer", "agricultural"],
+        "Energy":                  ["oil price", "OPEC", "Russia Ukraine energy", "Iran sanctions", "crude oil"],
+        "Financials":              ["fed rate", "interest rate", "federal reserve", "banking regulation", "inflation"],
+        "Health Care":             ["FDA regulation", "drug pricing", "healthcare reform", "biotech FDA"],
+        "Industrials":             ["tariff manufacturing", "supply chain", "infrastructure", "defense spending"],
+        "Materials":               ["china tariff metals", "supply chain materials", "mining regulation"],
+        "Real Estate":             ["interest rate housing", "fed rate real estate", "mortgage rate"],
+        "Utilities":               ["energy regulation", "interest rate utility", "renewable energy policy"],
+        "Defense":                 ["Russia Ukraine", "Middle East military", "defense budget", "NATO"],
+    }
+    keywords = SECTOR_KW.get(sector, ["trade war", "fed rate", "inflation", "geopolitical"])
+    # Also add industry-specific terms
+    ind_lower = industry.lower()
+    if "semiconductor" in ind_lower or "chip" in ind_lower:
+        keywords += ["semiconductor export", "chip war", "TSMC", "ASML export"]
+    if "oil" in ind_lower or "gas" in ind_lower:
+        keywords += ["OPEC", "crude oil", "LNG price"]
+    if "bank" in ind_lower or "financ" in ind_lower:
+        keywords += ["federal reserve", "bank regulation", "credit"]
+
+    _rss_feeds = [
+        ("https://feeds.reuters.com/reuters/businessNews", "Reuters"),
+        ("https://www.cnbc.com/id/10001147/device/rss/rss.html", "CNBC"),
+        ("https://feeds.marketwatch.com/marketwatch/topstories/", "MarketWatch"),
+        ("https://finance.yahoo.com/news/rssindex", "Yahoo Finance"),
+    ]
+    articles = []
+    headers  = {"User-Agent": "Mozilla/5.0 (compatible; MarketIntel/1.0)"}
+    for url, src in _rss_feeds:
+        try:
+            resp = requests.get(url, timeout=8, headers=headers)
+            if resp.status_code != 200:
+                continue
+            root = ET.fromstring(resp.content)
+            for item in root.findall(".//item")[:20]:
+                title   = re.sub(r"<[^>]+>", "", item.findtext("title",  "")).strip()
+                desc    = re.sub(r"<[^>]+>", "", item.findtext("description", ""))[:250].strip()
+                link    = item.findtext("link", "").strip()
+                pubdate = item.findtext("pubDate", "")[:25]
+                tl = (title + " " + desc).lower()
+                if any(kw.lower() in tl for kw in keywords):
+                    articles.append({
+                        "title": title, "summary": desc,
+                        "link": link, "published": pubdate,
+                        "source": src,
+                    })
+        except Exception:
+            continue
+
+    seen, unique = set(), []
+    for art in articles:
+        key = art["title"][:60].lower()
+        if key not in seen:
+            seen.add(key)
+            unique.append(art)
+    return unique[:15]
+
+
+# Sector → relevant geo risk factor keys
+_SECTOR_GEO_KEYS = {
+    "Technology":             ["us_china", "ai_bubble", "fed", "us_debt"],
+    "Communication Services": ["us_china", "ai_bubble", "fed"],
+    "Consumer Discretionary": ["us_china", "fed", "us_debt"],
+    "Consumer Staples":       ["fed", "russia_ukraine", "middle_east"],
+    "Energy":                 ["middle_east", "russia_ukraine", "fed"],
+    "Financials":             ["fed", "us_debt", "russia_ukraine"],
+    "Health Care":            ["fed", "us_debt"],
+    "Industrials":            ["us_china", "russia_ukraine", "fed"],
+    "Materials":              ["us_china", "russia_ukraine", "middle_east"],
+    "Real Estate":            ["fed", "us_debt"],
+    "Utilities":              ["fed", "us_debt", "middle_east"],
+    "Defense":                ["russia_ukraine", "middle_east", "us_china"],
+}
+_GEO_FACTORS_EN = {
+    "us_china":      ("🇺🇸🇨🇳 US-China Trade War",    "HIGH",   "Trump 145% tariffs → Tech/semiconductor pressure, supply chain restructuring",      "high_risk"),
+    "fed":           ("🏦 Fed Monetary Policy",         "MEDIUM", "Rate hold in 2025, 1-2 cuts possible → Positive for growth stocks",                 "med_risk"),
+    "middle_east":   ("🛢️ Middle East Tensions",        "MEDIUM", "Iran-Israel tensions persist, WTI oil price volatility impacts energy sector",      "med_risk"),
+    "russia_ukraine":("🇷🇺🇺🇦 Russia-Ukraine War",      "MEDIUM", "Prolonged conflict, EU energy supply uncertainty, defense stocks benefit",          "med_risk"),
+    "ai_bubble":     ("💹 AI Valuation Debate",         "LOW",    "NVIDIA etc. valuation debate, entering earnings-validation phase",                  "low_risk"),
+    "us_debt":       ("📉 US National Debt",            "MEDIUM", "$35T+ debt, fiscal deficit → Long-term rate upward pressure",                       "med_risk"),
+}
+_GEO_FACTORS_KO = {
+    "us_china":      ("🇺🇸🇨🇳 미-중 무역 갈등",         "높음",   "트럼프 관세 145% 부과 → 반도체·기술주 압박, 공급망 재편 가속화",              "high_risk"),
+    "fed":           ("🏦 연준(Fed) 통화정책",           "중간",   "2025년 금리 동결 기조 유지, 연내 1-2회 인하 가능성 → 성장주 긍정적",            "med_risk"),
+    "middle_east":   ("🛢️ 중동 지정학 리스크",           "중간",   "이란-이스라엘 긴장 지속, WTI 가격 변동성 에너지 섹터 영향",                    "med_risk"),
+    "russia_ukraine":("🇷🇺🇺🇦 러시아-우크라이나",         "중간",   "전쟁 장기화, 유럽 에너지 공급 불안 지속, 방산주 수혜",                          "med_risk"),
+    "ai_bubble":     ("💹 AI 밸류에이션 논쟁",           "낮음",   "엔비디아 등 AI 밸류에이션 논란, 실적 기반 검증 국면 진입",                       "low_risk"),
+    "us_debt":       ("📉 미국 국가부채",                "중간",   "35조 달러 돌파, 재정 적자 지속 → 장기 금리 상승 압력",                           "med_risk"),
+}
+
+
+def get_relevant_geo_factors(sector: str, lang: str) -> list:
+    """Return geo risk factors relevant to the given sector."""
+    keys = _SECTOR_GEO_KEYS.get(sector, list(_GEO_FACTORS_EN.keys()))
+    db   = _GEO_FACTORS_KO if lang == "ko" else _GEO_FACTORS_EN
+    return [db[k] for k in keys if k in db]
 
 # ─── TECHNICAL INDICATORS ─────────────────────────────────────────────────────
 def compute_indicators(df: pd.DataFrame) -> pd.DataFrame:
@@ -1704,83 +1840,73 @@ if _show_tabs:
     with tabs[2]:
         col_title, col_trans, col_update = st.columns([3, 1, 1])
         with col_title:
-            st.markdown(f"<div class='section-header'>{T('news_title')}</div>", unsafe_allow_html=True)
+            st.markdown(f"<div class='section-header'>{T('news_title')}: {company_name} ({ticker})</div>",
+                        unsafe_allow_html=True)
         with col_trans:
-            trans_label = ("🌐 영어로 보기" if st.session_state.news_translated else "🌐 한글 번역") if lang == "ko" else ("🌐 Show English" if st.session_state.news_translated else "🌐 한글 번역")
-            if st.button(trans_label, use_container_width=True):
+            trans_label = ("🌐 영어로 보기" if st.session_state.news_translated else "🌐 한글 번역")
+            if st.button(trans_label, use_container_width=True, key="news_trans_btn"):
                 st.session_state.news_translated = not st.session_state.news_translated
                 st.rerun()
         with col_update:
-            if st.button("🔄 " + ("새로고침" if lang == "ko" else "Refresh"), use_container_width=True):
+            if st.button("🔄 " + ("새로고침" if lang == "ko" else "Refresh"), use_container_width=True, key="news_refresh_btn"):
                 st.cache_data.clear()
                 st.rerun()
 
         now_str = datetime.now().strftime("%Y-%m-%d %H:%M")
-        st.markdown(f"<span class='update-badge'>🟢 {T('last_updated')}: {now_str} UTC</span>", unsafe_allow_html=True)
+        st.markdown(f"<span class='update-badge'>🟢 {T('last_updated')}: {now_str} UTC &nbsp;|&nbsp; 5분마다 자동갱신</span>",
+                    unsafe_allow_html=True)
         if st.session_state.news_translated:
-            st.markdown("<span class='update-badge' style='background:#1E3A5F;color:#64B5F6;margin-left:8px;'>🌐 한글 번역 중</span>", unsafe_allow_html=True)
+            st.markdown("<span class='update-badge' style='background:#1E3A5F;color:#64B5F6;margin-left:8px;'>🌐 한글 번역 중</span>",
+                        unsafe_allow_html=True)
         st.markdown("<br>", unsafe_allow_html=True)
 
         with st.spinner(T("news_loading")):
-            articles = fetch_news(lang)
+            articles = fetch_company_news(ticker, company_name)
 
         if articles:
-            # Filter by ticker if not index
-            relevant = []
-            other = []
-            for art in articles:
-                title_lower = art["title"].lower()
-                ticker_lower = ticker.lower().replace("^", "").replace("=f", "")
-                company_lower = company_name.lower()
-                is_relevant = (
-                    ticker_lower in title_lower
-                    or any(w in title_lower for w in company_lower.split()[:2])
-                    or any(w in title_lower for w in ["market", "stock", "fed", "rate", "inflation",
-                                                        "gdp", "economy", "wall street", "s&p", "nasdaq",
-                                                        "dow", "시장", "주식", "연준", "금리"])
-                )
-                if is_relevant:
-                    relevant.append(art)
-                else:
-                    other.append(art)
-
-            all_arts = relevant + other
-
-            # Display news in grid
             n_cols = 2
-            for i in range(0, min(len(all_arts), 20), n_cols):
-                row_arts = all_arts[i:i+n_cols]
-                cols = st.columns(n_cols)
-                for col, art in zip(cols, row_arts):
-                    with col:
-                        title_text = art["title"]
-                        summary_text = art["summary"]
+            for i in range(0, min(len(articles), 20), n_cols):
+                row_arts = articles[i:i+n_cols]
+                cols_n = st.columns(n_cols)
+                for col_n, art in zip(cols_n, row_arts):
+                    with col_n:
+                        title_text   = art["title"]
+                        summary_text = art.get("summary", "")
                         if st.session_state.news_translated:
                             with st.spinner("번역 중..."):
-                                title_text = translate_to_korean(title_text)
+                                title_text   = translate_to_korean(title_text)
                                 summary_text = translate_to_korean(summary_text)
                         st.markdown(f"""
                         <div class='news-card'>
-                            <div class='news-title'><a href='{art['link']}' target='_blank' style='color:#EAEAEA;text-decoration:none;'>{title_text}</a></div>
-                            <div class='news-meta'>📡 {art['source']} &nbsp;|&nbsp; 🕐 {art['published'][:20] if art['published'] else 'N/A'}</div>
+                            <div class='news-title'><a href='{art["link"]}' target='_blank'
+                                style='color:#EAEAEA;text-decoration:none;'>{title_text}</a></div>
+                            <div class='news-meta'>📡 {art["source"]} &nbsp;|&nbsp;
+                                🕐 {art["published"][:16] if art["published"] else "N/A"}</div>
                             <div class='news-summary'>{summary_text}</div>
                         </div>
                         """, unsafe_allow_html=True)
         else:
-            st.warning("Could not load news. Check your internet connection." if lang == "en" else "뉴스를 불러올 수 없습니다. 인터넷 연결을 확인하세요.")
+            st.info(("관련 뉴스를 찾지 못했습니다. 잠시 후 새로고침 해주세요."
+                     if lang == "ko" else
+                     "No relevant news found for this ticker. Try refreshing."))
 
     # ══════════════════ TAB 4: GEOPOLITICAL ══════════════════
     with tabs[3]:
-        _geo_hdr_col, _geo_btn_col = st.columns([4, 1])
+        _geo_hdr_col, _geo_btn_col, _geo_ref_col = st.columns([3, 1, 1])
         with _geo_hdr_col:
-            st.markdown(f"<div class='section-header'>{T('geo_title')}</div>", unsafe_allow_html=True)
+            st.markdown(f"<div class='section-header'>{T('geo_title')}: {company_name}</div>",
+                        unsafe_allow_html=True)
         with _geo_btn_col:
-            _geo_btn_label = ("🌐 영어로 보기" if st.session_state.geo_translated else "🌐 한글 번역") if lang == "en" else ("🌐 영어로 보기" if st.session_state.geo_translated else "🌐 한글 번역")
+            _geo_btn_label = "🌐 영어로 보기" if st.session_state.geo_translated else "🌐 한글 번역"
             if st.button(_geo_btn_label, key="geo_trans_btn", use_container_width=True):
                 st.session_state.geo_translated = not st.session_state.geo_translated
                 st.rerun()
+        with _geo_ref_col:
+            if st.button("🔄 " + ("새로고침" if lang == "ko" else "Refresh"), key="geo_refresh_btn", use_container_width=True):
+                st.cache_data.clear()
+                st.rerun()
 
-        # Current macro metrics
+        # Current macro metrics (always relevant)
         gcol1, gcol2, gcol3, gcol4, gcol5 = st.columns(5)
         macro_display = [
             (gl("VIX (공포지수)" if lang == "ko" else "VIX", T("geo_vix")), "VIX", "#FF4B4B"),
@@ -1804,73 +1930,69 @@ if _show_tabs:
 
         st.markdown("<br>", unsafe_allow_html=True)
 
-        # Risk factors
-        st.markdown(f"<div class='section-header'>{T('geo_factors')}</div>", unsafe_allow_html=True)
+        # Sector-filtered risk factors
+        _co_sector   = info.get("sector", "") or ""
+        _co_industry = info.get("industry", "") or ""
+        _eff_lang_geo = "ko" if (lang == "ko" or st.session_state.geo_translated) else "en"
+        risk_factors  = get_relevant_geo_factors(_co_sector, _eff_lang_geo)
 
-        risk_factors_ko = [
-            ("🇺🇸🇨🇳 미-중 무역 갈등", "높음", "트럼프 관세 145% 부과 → 반도체·기술주 압박, 공급망 재편 가속화", "high_risk"),
-            ("🏦 연준(Fed) 통화정책", "중간", "2025년 금리 동결 기조 유지, 연내 1-2회 인하 가능성 → 성장주 긍정적", "med_risk"),
-            ("🛢️ 중동 지정학 리스크", "중간", "이란-이스라엘 긴장 지속, WTI 가격 변동성 에너지 섹터 영향", "med_risk"),
-            ("🇷🇺🇺🇦 러시아-우크라이나", "중간", "전쟁 장기화, 유럽 에너지 공급 불안 지속, 방산주 수혜", "med_risk"),
-            ("💹 AI 과열 논쟁", "낮음", "엔비디아 등 AI 밸류에이션 논란, 실적 기반 검증 국면 진입", "low_risk"),
-            ("📉 미국 국가부채", "중간", "35조 달러 돌파, 재정 적자 지속 → 장기 금리 상승 압력", "med_risk"),
-        ]
-        risk_factors_en = [
-            ("🇺🇸🇨🇳 US-China Trade War", "HIGH", "Trump 145% tariffs → Tech/semiconductor pressure, supply chain restructuring", "high_risk"),
-            ("🏦 Fed Monetary Policy", "MEDIUM", "Rate hold in 2025, 1-2 cuts possible → Positive for growth stocks", "med_risk"),
-            ("🛢️ Middle East Tensions", "MEDIUM", "Iran-Israel tensions persist, WTI oil price volatility impacts energy sector", "med_risk"),
-            ("🇷🇺🇺🇦 Russia-Ukraine War", "MEDIUM", "Prolonged conflict, EU energy supply uncertainty, defense stocks benefit", "med_risk"),
-            ("💹 AI Bubble Concerns", "LOW", "NVIDIA etc. valuation debate, entering earnings-validation phase", "low_risk"),
-            ("📉 US National Debt", "MEDIUM", "$35T+ debt, fiscal deficit → Long-term rate upward pressure", "med_risk"),
-        ]
-
-        if st.session_state.geo_translated:
-            # When translated: always show Korean
-            risk_factors = risk_factors_ko
+        if _co_sector:
+            _sec_badge = f"<span style='background:#1A2744;border:1px solid #FFA500;border-radius:12px;padding:2px 10px;font-size:0.78rem;color:#FFA500;'>{_co_sector}</span>"
+            st.markdown(
+                f"<div class='section-header'>{T('geo_factors')} {_sec_badge}</div>",
+                unsafe_allow_html=True
+            )
         else:
-            risk_factors = risk_factors_ko if lang == "ko" else risk_factors_en
+            st.markdown(f"<div class='section-header'>{T('geo_factors')}</div>", unsafe_allow_html=True)
+
         risk_labels = {
             "high_risk": (T("high_risk"), "risk-high"),
-            "med_risk": (T("med_risk"), "risk-med"),
-            "low_risk": (T("low_risk"), "risk-low"),
+            "med_risk":  (T("med_risk"),  "risk-med"),
+            "low_risk":  (T("low_risk"),  "risk-low"),
         }
-
         rf_col1, rf_col2 = st.columns(2)
-        for i, (title, risk_key, desc, risk_type) in enumerate(risk_factors):
+        for i, (title_rf, risk_key, desc_rf, risk_type) in enumerate(risk_factors):
             risk_text, risk_class = risk_labels[risk_type]
-            target_col = rf_col1 if i % 2 == 0 else rf_col2
-            with target_col:
+            with (rf_col1 if i % 2 == 0 else rf_col2):
                 st.markdown(f"""
                 <div class='geo-card'>
                     <div style='display:flex;justify-content:space-between;align-items:center;'>
-                        <span style='font-weight:700;color:#EAEAEA;font-size:0.95rem;'>{title}</span>
+                        <span style='font-weight:700;color:#EAEAEA;font-size:0.95rem;'>{title_rf}</span>
                         <span class='{risk_class}'>[{risk_text}]</span>
                     </div>
-                    <div style='color:#B0BEC5;font-size:0.82rem;margin-top:6px;'>{desc}</div>
+                    <div style='color:#B0BEC5;font-size:0.82rem;margin-top:6px;'>{desc_rf}</div>
                 </div>
                 """, unsafe_allow_html=True)
 
         st.markdown("<br>", unsafe_allow_html=True)
 
-        # Historical geopolitical events chart
-        st.plotly_chart(build_geo_timeline(lang), use_container_width=True)
+        # Live geopolitical/macro news relevant to this company's sector
+        _geo_news_label = ("🌐 관련 최신 지정학·거시경제 뉴스" if lang == "ko"
+                           else "🌐 Latest Relevant Geopolitical & Macro News")
+        st.markdown(f"<div class='section-header'>{_geo_news_label}</div>", unsafe_allow_html=True)
 
-        # Correlation explanation
-        st.markdown(f"<div class='section-header'>{T('market_correlation')}</div>", unsafe_allow_html=True)
-        corr_data_ko = {
-            "이벤트 유형": ["금리 인상 사이클", "지정학 전쟁", "팬데믹/보건위기", "무역 전쟁", "AI/기술 붐", "금융위기"],
-            "평균 초기 충격": ["-15%", "-10%", "-34%", "-12%", "+40%", "-50%"],
-            "회복 기간": ["12-18개월", "3-6개월", "12개월", "6-12개월", "지속 상승", "24-36개월"],
-            "수혜 섹터": ["금융, 에너지", "방산, 에너지", "바이오, 기술", "소재, 국내소비", "기술, 반도체", "헬스케어, 필수소비재"],
-        }
-        corr_data_en = {
-            "Event Type": ["Rate Hike Cycle", "Geopolitical War", "Pandemic/Health Crisis", "Trade War", "AI/Tech Boom", "Financial Crisis"],
-            "Avg Initial Shock": ["-15%", "-10%", "-34%", "-12%", "+40%", "-50%"],
-            "Recovery Period": ["12-18 months", "3-6 months", "12 months", "6-12 months", "Sustained Rally", "24-36 months"],
-            "Beneficiary Sectors": ["Finance, Energy", "Defense, Energy", "Biotech, Tech", "Materials, Domestic", "Tech, Semiconductors", "Healthcare, Staples"],
-        }
-        corr_df = pd.DataFrame(corr_data_ko if lang == "ko" else corr_data_en)
-        st.dataframe(corr_df, use_container_width=True, hide_index=True)
+        with st.spinner("뉴스 로딩 중..." if lang == "ko" else "Loading news..."):
+            geo_news = fetch_geo_news(ticker, _co_sector, _co_industry)
+
+        if geo_news:
+            for art in geo_news:
+                title_g   = art["title"]
+                summary_g = art.get("summary", "")
+                if st.session_state.geo_translated:
+                    with st.spinner("번역 중..."):
+                        title_g   = translate_to_korean(title_g)
+                        summary_g = translate_to_korean(summary_g)
+                st.markdown(f"""
+                <div class='news-card' style='border-left:3px solid #AB63FA;'>
+                    <div class='news-title'><a href='{art["link"]}' target='_blank'
+                        style='color:#EAEAEA;text-decoration:none;'>{title_g}</a></div>
+                    <div class='news-meta'>📡 {art["source"]} &nbsp;|&nbsp;
+                        🕐 {art["published"][:16] if art["published"] else "N/A"}</div>
+                    <div class='news-summary'>{summary_g}</div>
+                </div>
+                """, unsafe_allow_html=True)
+        else:
+            st.info("관련 지정학 뉴스를 찾지 못했습니다." if lang == "ko" else "No relevant geopolitical news found.")
 
     # ══════════════════ TAB 5: HISTORY ══════════════════
     with tabs[4]:
