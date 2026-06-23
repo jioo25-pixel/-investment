@@ -115,6 +115,7 @@ TEXTS = {
         "beta": "Beta vs S&P 500",
         "summary_analysis": "2-Line Summary Analysis",
         "tab_semi": "💾 Semiconductors",
+        "tab_sectors": "🗂️ Sector Explorer",
     },
     "ko": {
         "title": "미국 증시 인텔리전스 시스템",
@@ -199,6 +200,7 @@ TEXTS = {
         "beta": "베타 (S&P 500 대비)",
         "summary_analysis": "2줄 요약 분석",
         "tab_semi": "💾 반도체 생태계",
+        "tab_sectors": "🗂️ 섹터 탐색",
     },
 }
 
@@ -1028,7 +1030,7 @@ for col, (label, val, change) in zip([mcol1, mcol2, mcol3, mcol4, mcol5, mcol6],
     """, unsafe_allow_html=True)
 
 # ─── TABS ─────────────────────────────────────────────────────────────────────
-tabs = st.tabs([T("tab_overview"), T("tab_predict"), T("tab_news"), T("tab_geo"), T("tab_history"), T("tab_company"), T("tab_relations"), T("tab_semi")])
+tabs = st.tabs([T("tab_overview"), T("tab_predict"), T("tab_news"), T("tab_geo"), T("tab_history"), T("tab_company"), T("tab_relations"), T("tab_semi"), T("tab_sectors")])
 
 # ══════════════════ TAB 1: OVERVIEW ══════════════════
 with tabs[0]:
@@ -2399,7 +2401,726 @@ with tabs[7]:
             </div>
             """, unsafe_allow_html=True)
 
+# ══════════════════ SECTOR DATABASE ══════════════════
+SECTOR_DB = [
+    {
+        "id": "ai",
+        "icon": "🤖",
+        "label_en": "Artificial Intelligence",
+        "label_ko": "인공지능 (AI)",
+        "color": "#FFA500",
+        "companies": [
+            ("NVDA","NVIDIA","GPU/AI Infra","🇺🇸"),
+            ("MSFT","Microsoft","Copilot/Azure AI","🇺🇸"),
+            ("GOOGL","Alphabet","Gemini/TPU/DeepMind","🇺🇸"),
+            ("META","Meta","Llama/FAIR Research","🇺🇸"),
+            ("AMZN","Amazon","Bedrock/Trainium","🇺🇸"),
+            ("ORCL","Oracle","AI Cloud/GPU Infra","🇺🇸"),
+            ("CRM","Salesforce","Einstein AI/Agentforce","🇺🇸"),
+            ("NOW","ServiceNow","Enterprise AI Agents","🇺🇸"),
+            ("PLTR","Palantir","AI/Big Data Analytics","🇺🇸"),
+            ("AI","C3.ai","Enterprise AI Apps","🇺🇸"),
+            ("SOUN","SoundHound AI","Voice AI","🇺🇸"),
+            ("BBAI","BigBear.ai","AI Decision Intelligence","🇺🇸"),
+            ("PATH","UiPath","RPA/AI Automation","🇺🇸"),
+            ("SNOW","Snowflake","Data Cloud + AI","🇺🇸"),
+            ("DDOG","Datadog","AI Observability","🇺🇸"),
+            ("S","SentinelOne","AI Cybersecurity","🇺🇸"),
+            ("CFLT","Confluent","Data Streaming AI","🇺🇸"),
+            ("MDB","MongoDB","Vector DB for AI","🇺🇸"),
+        ],
+    },
+    {
+        "id": "semiconductor",
+        "icon": "💾",
+        "label_en": "Semiconductors",
+        "label_ko": "반도체",
+        "color": "#AB63FA",
+        "companies": [
+            ("NVDA","NVIDIA","AI GPU","🇺🇸"),
+            ("TSM","TSMC","Foundry #1","🇹🇼"),
+            ("AVGO","Broadcom","Networking Chips","🇺🇸"),
+            ("AMD","AMD","CPU/GPU","🇺🇸"),
+            ("INTC","Intel","CPU/IDM","🇺🇸"),
+            ("QCOM","Qualcomm","Mobile SoC","🇺🇸"),
+            ("ASML","ASML","EUV Equipment","🇳🇱"),
+            ("AMAT","Applied Materials","Fab Equipment","🇺🇸"),
+            ("LRCX","Lam Research","Etch Tools","🇺🇸"),
+            ("KLAC","KLA Corp","Process Control","🇺🇸"),
+            ("MU","Micron","DRAM/NAND/HBM","🇺🇸"),
+            ("TXN","Texas Instruments","Analog/MCU","🇺🇸"),
+            ("ARM","Arm Holdings","CPU IP","🇬🇧"),
+            ("MRVL","Marvell","Data Center","🇺🇸"),
+            ("SNPS","Synopsys","EDA Tools","🇺🇸"),
+            ("CDNS","Cadence","EDA/PCB","🇺🇸"),
+            ("ENTG","Entegris","Fab Materials","🇺🇸"),
+            ("MPWR","Monolithic Power","Power Mgmt","🇺🇸"),
+            ("005930.KS","Samsung","Memory+Foundry","🇰🇷"),
+            ("000660.KS","SK Hynix","HBM/DRAM","🇰🇷"),
+        ],
+    },
+    {
+        "id": "biotech",
+        "icon": "🧬",
+        "label_en": "Biotech",
+        "label_ko": "바이오테크",
+        "color": "#00D4AA",
+        "companies": [
+            ("REGN","Regeneron","Eylea/Dupixent","🇺🇸"),
+            ("VRTX","Vertex Pharma","CRISPR/CF Drugs","🇺🇸"),
+            ("MRNA","Moderna","mRNA Vaccines","🇺🇸"),
+            ("BNTX","BioNTech","mRNA Platform","🇩🇪"),
+            ("GILD","Gilead","HIV/Oncology","🇺🇸"),
+            ("BIIB","Biogen","Alzheimer's","🇺🇸"),
+            ("ILMN","Illumina","DNA Sequencing","🇺🇸"),
+            ("CRSP","CRISPR Therapeutics","Gene Editing","🇨🇭"),
+            ("EDIT","Editas Medicine","CRISPR Editing","🇺🇸"),
+            ("NTLA","Intellia Therapeutics","CRISPR In Vivo","🇺🇸"),
+            ("BEAM","Beam Therapeutics","Base Editing","🇺🇸"),
+            ("PACB","PacBio","Long-read Sequencing","🇺🇸"),
+            ("RXRX","Recursion Pharma","AI Drug Discovery","🇺🇸"),
+            ("EXAS","Exact Sciences","Cancer Screening","🇺🇸"),
+            ("FATE","Fate Therapeutics","Cell Therapy","🇺🇸"),
+            ("IONS","Ionis Pharma","RNA Therapeutics","🇺🇸"),
+            ("ALNY","Alnylam","RNAi Therapy","🇺🇸"),
+            ("SGEN","Seagen","Antibody-Drug Conj","🇺🇸"),
+        ],
+    },
+    {
+        "id": "healthcare",
+        "icon": "🏥",
+        "label_en": "Healthcare",
+        "label_ko": "헬스케어",
+        "color": "#64B5F6",
+        "companies": [
+            ("UNH","UnitedHealth","Health Insurance","🇺🇸"),
+            ("JNJ","Johnson & Johnson","Pharma/MedTech","🇺🇸"),
+            ("LLY","Eli Lilly","GLP-1/Diabetes","🇺🇸"),
+            ("NVO","Novo Nordisk","Ozempic/Wegovy","🇩🇰"),
+            ("ABBV","AbbVie","Humira/Skyrizi","🇺🇸"),
+            ("MRK","Merck","Keytruda/Vaccines","🇺🇸"),
+            ("PFE","Pfizer","Vaccines/Oncology","🇺🇸"),
+            ("TMO","Thermo Fisher","Lab Instruments","🇺🇸"),
+            ("ABT","Abbott","Diagnostics/CGM","🇺🇸"),
+            ("ISRG","Intuitive Surgical","Robotic Surgery","🇺🇸"),
+            ("SYK","Stryker","Orthopedics","🇺🇸"),
+            ("BSX","Boston Scientific","Cardiovascular","🇺🇸"),
+            ("EW","Edwards Life","Heart Valves","🇺🇸"),
+            ("DXCM","Dexcom","CGM Glucose Monitor","🇺🇸"),
+            ("HCA","HCA Healthcare","Hospital Network","🇺🇸"),
+            ("CVS","CVS Health","Pharmacy/Insurance","🇺🇸"),
+            ("CI","Cigna","Health Insurance","🇺🇸"),
+            ("HUM","Humana","Medicare Advantage","🇺🇸"),
+        ],
+    },
+    {
+        "id": "quantum",
+        "icon": "⚛️",
+        "label_en": "Quantum Computing",
+        "label_ko": "양자컴퓨터",
+        "color": "#CE93D8",
+        "companies": [
+            ("IONQ","IonQ","Trapped Ion QC","🇺🇸"),
+            ("RGTI","Rigetti","Superconducting QC","🇺🇸"),
+            ("QBTS","D-Wave Quantum","Quantum Annealing","🇨🇦"),
+            ("QUBT","Quantum Computing Inc","Photonic QC","🇺🇸"),
+            ("IBM","IBM","IBM Quantum/1000+ qubits","🇺🇸"),
+            ("GOOGL","Alphabet","Willow Quantum Chip","🇺🇸"),
+            ("MSFT","Microsoft","Topological Qubit","🇺🇸"),
+            ("AMZN","Amazon","Braket Quantum Cloud","🇺🇸"),
+            ("HON","Honeywell","Quantinuum (spin-off)","🇺🇸"),
+            ("ARQQ","Arqit Quantum","QKD Encryption","🇬🇧"),
+            ("BFLY","Butterfly Network","Quantum Sensing","🇺🇸"),
+        ],
+    },
+    {
+        "id": "oil",
+        "icon": "🛢️",
+        "label_en": "Oil & Petroleum",
+        "label_ko": "석유",
+        "color": "#8B4513",
+        "companies": [
+            ("XOM","ExxonMobil","Integrated Oil Major","🇺🇸"),
+            ("CVX","Chevron","Integrated Oil Major","🇺🇸"),
+            ("COP","ConocoPhillips","E&P Focus","🇺🇸"),
+            ("EOG","EOG Resources","Shale/Permian E&P","🇺🇸"),
+            ("PXD","Pioneer Natural","Permian Basin","🇺🇸"),
+            ("OXY","Occidental","Enhanced Oil Recovery","🇺🇸"),
+            ("MPC","Marathon Petroleum","Refining","🇺🇸"),
+            ("PSX","Phillips 66","Refining/Midstream","🇺🇸"),
+            ("VLO","Valero Energy","Largest US Refiner","🇺🇸"),
+            ("HAL","Halliburton","Oilfield Services","🇺🇸"),
+            ("SLB","SLB (Schlumberger)","Oilfield Services #1","🇺🇸"),
+            ("BKR","Baker Hughes","Oilfield Services","🇺🇸"),
+            ("SHEL","Shell","European Oil Major","🇬🇧"),
+            ("BP","BP","European Oil Major","🇬🇧"),
+            ("TTE","TotalEnergies","European Oil Major","🇫🇷"),
+            ("E","Eni","Italian Oil Major","🇮🇹"),
+            ("CL=F","Crude Oil WTI","Commodity","🌐"),
+        ],
+    },
+    {
+        "id": "natgas",
+        "icon": "🔥",
+        "label_en": "Natural Gas & Shale",
+        "label_ko": "천연가스·셰일가스",
+        "color": "#FF7043",
+        "companies": [
+            ("LNG","Cheniere Energy","LNG Export #1 US","🇺🇸"),
+            ("AR","Antero Resources","Appalachian Natgas","🇺🇸"),
+            ("EQT","EQT Corp","Largest US Natgas E&P","🇺🇸"),
+            ("RRC","Range Resources","Marcellus Shale","🇺🇸"),
+            ("SWN","Southwestern Energy","Appalachian Shale","🇺🇸"),
+            ("CTRA","Coterra Energy","Permian+Marcellus","🇺🇸"),
+            ("CNX","CNX Resources","Appalachian Gas","🇺🇸"),
+            ("KMI","Kinder Morgan","Gas Pipeline #1","🇺🇸"),
+            ("WMB","Williams Companies","Gas Midstream","🇺🇸"),
+            ("OKE","ONEOK","NGL Midstream","🇺🇸"),
+            ("ET","Energy Transfer","Gas Pipelines","🇺🇸"),
+            ("NG=F","Natural Gas Futures","Commodity","🌐"),
+        ],
+    },
+    {
+        "id": "solar",
+        "icon": "☀️",
+        "label_en": "Solar Energy",
+        "label_ko": "태양광·태양열",
+        "color": "#FFD700",
+        "companies": [
+            ("ENPH","Enphase Energy","Microinverters","🇺🇸"),
+            ("SEDG","SolarEdge","String Inverters","🇮🇱"),
+            ("FSLR","First Solar","Thin-Film Panels","🇺🇸"),
+            ("SPWR","SunPower","Residential Solar","🇺🇸"),
+            ("RUN","Sunrun","Rooftop Solar Lease","🇺🇸"),
+            ("ARRY","Array Technologies","Solar Trackers","🇺🇸"),
+            ("NOVA","Sunnova Energy","Solar+Storage","🇺🇸"),
+            ("SHLS","Shoals Technologies","BOS Components","🇺🇸"),
+            ("CSIQ","Canadian Solar","Global Panel Maker","🇨🇦"),
+            ("JKS","JinkoSolar","China #1 Panel Maker","🇨🇳"),
+            ("DQ","Daqo New Energy","Polysilicon","🇨🇳"),
+            ("NEE","NextEra Energy","Solar+Wind Utility","🇺🇸"),
+            ("AES","AES Corp","Renewable Utility","🇺🇸"),
+            ("CWEN","Clearway Energy","Solar/Wind YieldCo","🇺🇸"),
+        ],
+    },
+    {
+        "id": "energy_general",
+        "icon": "⚡",
+        "label_en": "Energy & Utilities",
+        "label_ko": "에너지·전력·유틸리티",
+        "color": "#FFCA28",
+        "companies": [
+            ("NEE","NextEra Energy","Largest US Utility/Solar","🇺🇸"),
+            ("DUK","Duke Energy","Nuclear+Coal Utility","🇺🇸"),
+            ("SO","Southern Company","Nuclear+Gas Utility","🇺🇸"),
+            ("D","Dominion Energy","Mid-Atlantic Utility","🇺🇸"),
+            ("EXC","Exelon","Nuclear Power Largest","🇺🇸"),
+            ("CEG","Constellation Energy","Nuclear Clean Power","🇺🇸"),
+            ("VST","Vistra","Nuclear+Gas Power","🇺🇸"),
+            ("NRG","NRG Energy","Competitive Power","🇺🇸"),
+            ("PCG","PG&E","California Utility","🇺🇸"),
+            ("ED","Consolidated Edison","NYC Utility","🇺🇸"),
+            ("AEP","American Electric","Transmission Grid","🇺🇸"),
+            ("ETR","Entergy","Nuclear South","🇺🇸"),
+            ("AWK","American Water","Water Utility","🇺🇸"),
+            ("WEC","WEC Energy","Midwest Utility","🇺🇸"),
+            ("ES","Eversource","New England Utility","🇺🇸"),
+        ],
+    },
+    {
+        "id": "defense",
+        "icon": "🛡️",
+        "label_en": "Defense & Aerospace",
+        "label_ko": "방산·항공우주",
+        "color": "#607D8B",
+        "companies": [
+            ("LMT","Lockheed Martin","F-35/Missiles/Space","🇺🇸"),
+            ("RTX","RTX Corp","Missiles/Jet Engines","🇺🇸"),
+            ("NOC","Northrop Grumman","B-21/Cyber/Space","🇺🇸"),
+            ("GD","General Dynamics","Submarines/Gulfstream","🇺🇸"),
+            ("BA","Boeing","Aircraft/Defense","🇺🇸"),
+            ("HII","Huntington Ingalls","Naval Ships","🇺🇸"),
+            ("L3","L3Harris","Electronics/Sensors","🇺🇸"),
+            ("LDOS","Leidos","IT/Defense Services","🇺🇸"),
+            ("SAIC","SAIC","Defense IT","🇺🇸"),
+            ("KTOS","Kratos Defense","Drone/Hypersonic","🇺🇸"),
+            ("PLTR","Palantir","AI/Data for Military","🇺🇸"),
+            ("AVAV","AeroVironment","Tactical Drones","🇺🇸"),
+            ("ACHR","Archer Aviation","eVTOL/Urban Air","🇺🇸"),
+            ("JOBY","Joby Aviation","Air Taxi","🇺🇸"),
+            ("AIR","AAR Corp","MRO/Aviation Support","🇺🇸"),
+            ("HEI","HEICO","Aerospace Parts","🇺🇸"),
+            ("TDG","TransDigm","Aerospace Components","🇺🇸"),
+        ],
+    },
+    {
+        "id": "battery",
+        "icon": "🔋",
+        "label_en": "Battery & Energy Storage",
+        "label_ko": "배터리·에너지저장",
+        "color": "#69F0AE",
+        "companies": [
+            ("TSLA","Tesla","Megapack/4680","🇺🇸"),
+            ("ENVX","Enovix","Silicon Anode Battery","🇺🇸"),
+            ("QS","QuantumScape","Solid-State Battery","🇺🇸"),
+            ("FREYR","FREYR Battery","European Gigafactory","🇳🇴"),
+            ("AMPS","Altus Power","Solar+Storage","🇺🇸"),
+            ("STEM","Stem Inc","AI Battery Storage","🇺🇸"),
+            ("FLUX","Flux Power","Lithium Forklift","🇺🇸"),
+            ("NKLA","Nikola","Hydrogen/BEV Trucks","🇺🇸"),
+            ("006400.KS","Samsung SDI","EV+ESS Batteries","🇰🇷"),
+            ("051910.KS","LG Chem","Battery Materials","🇰🇷"),
+            ("373220.KS","LG Energy Solution","EV Batteries","🇰🇷"),
+            ("096770.KS","SK Innovation","EV Batteries","🇰🇷"),
+            ("CATL","CATL","China #1 Battery","🇨🇳"),
+            ("ALB","Albemarle","Lithium Mining","🇺🇸"),
+            ("SQM","SQM","Lithium (Chile)","🇨🇱"),
+            ("PLL","Piedmont Lithium","US Lithium Mining","🇺🇸"),
+            ("LAC","Lithium Americas","Nevada Lithium","🇨🇦"),
+        ],
+    },
+    {
+        "id": "automotive",
+        "icon": "🚗",
+        "label_en": "Automotive & EV",
+        "label_ko": "자동차·전기차",
+        "color": "#4FC3F7",
+        "companies": [
+            ("TSLA","Tesla","EV Leader","🇺🇸"),
+            ("TM","Toyota","Hybrid/Fuel Cell","🇯🇵"),
+            ("GM","General Motors","EV Transition","🇺🇸"),
+            ("F","Ford","F-150 Lightning","🇺🇸"),
+            ("STLA","Stellantis","Jeep/RAM/Fiat","🇮🇹"),
+            ("RIVN","Rivian","EV Trucks/Amazon Van","🇺🇸"),
+            ("LCID","Lucid Motors","Luxury Long-Range EV","🇺🇸"),
+            ("NIO","NIO","China EV Premium","🇨🇳"),
+            ("LI","Li Auto","China EREV","🇨🇳"),
+            ("XPEV","XPeng","China EV+ADAS","🇨🇳"),
+            ("005380.KS","Hyundai","Ioniq/EV6","🇰🇷"),
+            ("000270.KS","Kia","EV6/EV9","🇰🇷"),
+            ("VOW","Volkswagen","ID Series EV","🇩🇪"),
+            ("BMW","BMW","iX/i4 EV","🇩🇪"),
+            ("MBGAF","Mercedes-Benz","EQS EV","🇩🇪"),
+            ("MBIN","Merchants Fleet","Fleet Management","🇺🇸"),
+            ("GOEV","Canoo","EV Van/Truck","🇺🇸"),
+            ("CARZ","Carvana (related ETF)","Used EV Market","🇺🇸"),
+        ],
+    },
+    {
+        "id": "tech",
+        "icon": "💻",
+        "label_en": "Big Tech & Software",
+        "label_ko": "빅테크·소프트웨어",
+        "color": "#29B6F6",
+        "companies": [
+            ("AAPL","Apple","iPhone/Mac/Services","🇺🇸"),
+            ("MSFT","Microsoft","Windows/Azure/AI","🇺🇸"),
+            ("GOOGL","Alphabet","Search/Cloud/AI","🇺🇸"),
+            ("META","Meta","Social/AR/VR","🇺🇸"),
+            ("AMZN","Amazon","eCommerce/AWS","🇺🇸"),
+            ("NFLX","Netflix","Streaming","🇺🇸"),
+            ("ADBE","Adobe","Creative Cloud/AI","🇺🇸"),
+            ("CRM","Salesforce","CRM/AI","🇺🇸"),
+            ("NOW","ServiceNow","Enterprise Automation","🇺🇸"),
+            ("SHOP","Shopify","eCommerce Platform","🇨🇦"),
+            ("UBER","Uber","Rideshare/Delivery","🇺🇸"),
+            ("LYFT","Lyft","Rideshare","🇺🇸"),
+            ("ABNB","Airbnb","Travel Platform","🇺🇸"),
+            ("DASH","DoorDash","Food Delivery","🇺🇸"),
+            ("SPOT","Spotify","Music Streaming","🇸🇪"),
+            ("SNAP","Snap","Social/AR","🇺🇸"),
+            ("X","X (Twitter)","Social Media","🇺🇸"),
+            ("PINS","Pinterest","Visual Search","🇺🇸"),
+            ("TWLO","Twilio","Communication API","🇺🇸"),
+            ("ZM","Zoom","Video Conferencing","🇺🇸"),
+        ],
+    },
+    {
+        "id": "electronics",
+        "icon": "📱",
+        "label_en": "Electronics & Consumer Tech",
+        "label_ko": "전자제품·소비가전",
+        "color": "#FF8A65",
+        "companies": [
+            ("AAPL","Apple","Consumer Electronics","🇺🇸"),
+            ("005930.KS","Samsung","TVs/Appliances/Phones","🇰🇷"),
+            ("SONY","Sony","PS5/TV/Camera","🇯🇵"),
+            ("LG","LG Electronics","OLED TV/Appliances","🇰🇷"),
+            ("PANAY","Panasonic","Batteries/B2B","🇯🇵"),
+            ("MSI","MSI/Micro-Star","Gaming PCs/GPUs","🇹🇼"),
+            ("HPQ","HP Inc","PC/Printer","🇺🇸"),
+            ("DELL","Dell Tech","PC/Server","🇺🇸"),
+            ("LNVGY","Lenovo","PC #1 Global","🇨🇳"),
+            ("BBY","Best Buy","Electronics Retail","🇺🇸"),
+            ("GME","GameStop","Gaming Retail","🇺🇸"),
+            ("AMZN","Amazon","Electronics eRetail","🇺🇸"),
+            ("WMT","Walmart","Electronics Retail","🇺🇸"),
+            ("NFLX","Netflix","Streaming Device","🇺🇸"),
+            ("ROKU","Roku","Streaming Platform","🇺🇸"),
+            ("VZIO","Vizio","Smart TVs","🇺🇸"),
+            ("HEAR","Turtle Beach","Gaming Headsets","🇺🇸"),
+        ],
+    },
+    {
+        "id": "finance",
+        "icon": "🏦",
+        "label_en": "Finance & Banking",
+        "label_ko": "금융·은행",
+        "color": "#42A5F5",
+        "companies": [
+            ("JPM","JPMorgan Chase","Largest US Bank","🇺🇸"),
+            ("BAC","Bank of America","Retail Banking","🇺🇸"),
+            ("WFC","Wells Fargo","Consumer Banking","🇺🇸"),
+            ("GS","Goldman Sachs","Investment Bank","🇺🇸"),
+            ("MS","Morgan Stanley","Wealth Mgmt","🇺🇸"),
+            ("BRK-B","Berkshire Hathaway","Conglomerate/Insurance","🇺🇸"),
+            ("V","Visa","Payment Network","🇺🇸"),
+            ("MA","Mastercard","Payment Network","🇺🇸"),
+            ("PYPL","PayPal","Digital Payments","🇺🇸"),
+            ("SQ","Block (Square)","Fintech","🇺🇸"),
+            ("COIN","Coinbase","Crypto Exchange","🇺🇸"),
+            ("BX","Blackstone","Private Equity","🇺🇸"),
+            ("KKR","KKR","Private Equity","🇺🇸"),
+            ("APO","Apollo Global","Alternative Assets","🇺🇸"),
+            ("SCHW","Charles Schwab","Brokerage","🇺🇸"),
+            ("ICE","ICE","Exchange Operator","🇺🇸"),
+            ("CME","CME Group","Derivatives Exchange","🇺🇸"),
+        ],
+    },
+    {
+        "id": "crypto",
+        "icon": "₿",
+        "label_en": "Crypto & Digital Assets",
+        "label_ko": "암호화폐·디지털자산",
+        "color": "#F7931A",
+        "companies": [
+            ("BTC-USD","Bitcoin","Store of Value","🌐"),
+            ("ETH-USD","Ethereum","Smart Contract L1","🌐"),
+            ("SOL-USD","Solana","High-Speed L1","🌐"),
+            ("BNB-USD","BNB","Binance Chain","🌐"),
+            ("COIN","Coinbase","Crypto Exchange","🇺🇸"),
+            ("MSTR","MicroStrategy","Bitcoin Treasury","🇺🇸"),
+            ("MARA","Marathon Digital","Bitcoin Mining","🇺🇸"),
+            ("RIOT","Riot Platforms","Bitcoin Mining","🇺🇸"),
+            ("HUT","Hut 8","Bitcoin Mining","🇨🇦"),
+            ("CLSK","CleanSpark","Green BTC Mining","🇺🇸"),
+            ("CIFR","Cipher Mining","Bitcoin Mining","🇺🇸"),
+            ("CRCL","Circle (private)","USDC Stablecoin","🇺🇸"),
+            ("GBTC","Grayscale BTC Trust","BTC ETF","🇺🇸"),
+            ("IBIT","iShares BTC ETF","BTC ETF (BlackRock)","🇺🇸"),
+        ],
+    },
+    {
+        "id": "space",
+        "icon": "🚀",
+        "label_en": "Space & Satellites",
+        "label_ko": "우주·위성",
+        "color": "#7C4DFF",
+        "companies": [
+            ("SPCE","Virgin Galactic","Space Tourism","🇺🇸"),
+            ("RKLB","Rocket Lab","Small Satellite Launch","🇺🇸"),
+            ("ASTS","AST SpaceMobile","Space Cellular","🇺🇸"),
+            ("LUNR","Intuitive Machines","Lunar Landing","🇺🇸"),
+            ("PL","Planet Labs","Earth Observation","🇺🇸"),
+            ("SATL","Satellogic","Earth Imaging","🇺🇸"),
+            ("MAXR","Maxar Technologies","Satellite Imagery","🇺🇸"),
+            ("IRDM","Iridium","Satellite IoT/Phone","🇺🇸"),
+            ("VSAT","Viasat","Satellite Internet","🇺🇸"),
+            ("TSAT","Telesat","Satellite Broadband","🇨🇦"),
+            ("SRAC","Momentus","In-Space Transport","🇺🇸"),
+            ("LMT","Lockheed","Orion/Defense Space","🇺🇸"),
+            ("NOC","Northrop","James Webb/B-21","🇺🇸"),
+            ("BA","Boeing","Starliner/SLS","🇺🇸"),
+        ],
+    },
+    {
+        "id": "industrials",
+        "icon": "🏗️",
+        "label_en": "Industrials & Infrastructure",
+        "label_ko": "산업재·인프라",
+        "color": "#90A4AE",
+        "companies": [
+            ("CAT","Caterpillar","Heavy Equipment","🇺🇸"),
+            ("DE","John Deere","Ag/Mining Equipment","🇺🇸"),
+            ("HON","Honeywell","Industrial Automation","🇺🇸"),
+            ("MMM","3M","Diversified Industrial","🇺🇸"),
+            ("GE","GE Aerospace","Jet Engines","🇺🇸"),
+            ("ETN","Eaton","Power Management","🇮🇪"),
+            ("EMR","Emerson Electric","Automation","🇺🇸"),
+            ("ROK","Rockwell Auto","Factory Automation","🇺🇸"),
+            ("PWR","Quanta Services","Grid/EV Infra","🇺🇸"),
+            ("PRIM","Primoris","Engineering/Infra","🇺🇸"),
+            ("URI","United Rentals","Equipment Rental","🇺🇸"),
+            ("AME","AMETEK","Electronic Instruments","🇺🇸"),
+            ("FTV","Fortive","Industrial Tech","🇺🇸"),
+            ("GNRC","Generac","Backup Power","🇺🇸"),
+            ("CARR","Carrier Global","HVAC/Refrigeration","🇺🇸"),
+            ("TT","Trane Technologies","HVAC Systems","🇮🇪"),
+        ],
+    },
+    {
+        "id": "realestate",
+        "icon": "🏢",
+        "label_en": "Real Estate & REITs",
+        "label_ko": "부동산·리츠",
+        "color": "#A1887F",
+        "companies": [
+            ("AMT","American Tower","Cell Tower REIT","🇺🇸"),
+            ("PLD","Prologis","Industrial REIT","🇺🇸"),
+            ("EQIX","Equinix","Data Center REIT","🇺🇸"),
+            ("DLR","Digital Realty","Data Center REIT","🇺🇸"),
+            ("CCI","Crown Castle","Cell Tower REIT","🇺🇸"),
+            ("SPG","Simon Property","Mall REIT","🇺🇸"),
+            ("O","Realty Income","Net Lease REIT","🇺🇸"),
+            ("WELL","Welltower","Senior Housing REIT","🇺🇸"),
+            ("AVB","AvalonBay","Apartment REIT","🇺🇸"),
+            ("EQR","Equity Residential","Apartment REIT","🇺🇸"),
+            ("PSA","Public Storage","Self-Storage REIT","🇺🇸"),
+            ("VICI","VICI Properties","Gaming REIT","🇺🇸"),
+            ("GLPI","Gaming & Leisure","Casino REIT","🇺🇸"),
+            ("IRM","Iron Mountain","Document Storage REIT","🇺🇸"),
+            ("SBAC","SBA Communications","Tower REIT","🇺🇸"),
+        ],
+    },
+    {
+        "id": "consumer",
+        "icon": "🛒",
+        "label_en": "Consumer & Retail",
+        "label_ko": "소비재·유통",
+        "color": "#EF9A9A",
+        "companies": [
+            ("AMZN","Amazon","eCommerce/AWS","🇺🇸"),
+            ("WMT","Walmart","Big-Box Retail","🇺🇸"),
+            ("COST","Costco","Membership Retail","🇺🇸"),
+            ("TGT","Target","Discount Retail","🇺🇸"),
+            ("HD","Home Depot","Home Improvement","🇺🇸"),
+            ("LOW","Lowe's","Home Improvement","🇺🇸"),
+            ("NKE","Nike","Sportswear","🇺🇸"),
+            ("LULU","Lululemon","Athletic Apparel","🇨🇦"),
+            ("MCD","McDonald's","Fast Food","🇺🇸"),
+            ("SBUX","Starbucks","Coffee Chain","🇺🇸"),
+            ("CMG","Chipotle","Fast Casual","🇺🇸"),
+            ("PG","Procter & Gamble","Consumer Staples","🇺🇸"),
+            ("KO","Coca-Cola","Beverages","🇺🇸"),
+            ("PEP","PepsiCo","Beverages/Snacks","🇺🇸"),
+            ("MDLZ","Mondelez","Snacks/Oreo/Cadbury","🇺🇸"),
+            ("HSY","Hershey","Chocolate/Candy","🇺🇸"),
+            ("TSLA","Tesla","EV Consumer","🇺🇸"),
+        ],
+    },
+    {
+        "id": "nuclear",
+        "icon": "☢️",
+        "label_en": "Nuclear Energy",
+        "label_ko": "원자력 에너지",
+        "color": "#FF6E40",
+        "companies": [
+            ("CEG","Constellation Energy","US Nuclear #1","🇺🇸"),
+            ("VST","Vistra","Nuclear+Gas","🇺🇸"),
+            ("ETR","Entergy","Nuclear South US","🇺🇸"),
+            ("EXC","Exelon","Nuclear Largest Fleet","🇺🇸"),
+            ("CCJ","Cameco","Uranium Mining","🇨🇦"),
+            ("NXE","NexGen Energy","Uranium Athabasca","🇨🇦"),
+            ("DNN","Denison Mines","Uranium","🇨🇦"),
+            ("URA","Global X Uranium ETF","Uranium Basket","🇺🇸"),
+            ("UUUU","Energy Fuels","US Uranium/Vanadium","🇺🇸"),
+            ("UEC","Uranium Energy","US ISR Uranium","🇺🇸"),
+            ("OKLO","Oklo","Micro-reactor SMR","🇺🇸"),
+            ("SMR","NuScale Power","SMR Reactor Design","🇺🇸"),
+            ("BWXT","BWX Technologies","Nuclear Components","🇺🇸"),
+            ("GEV","GE Vernova","Nuclear+Grid Tech","🇺🇸"),
+        ],
+    },
+]
+
+# session state for selected sector
+if "selected_sector" not in st.session_state:
+    st.session_state.selected_sector = None
+
+@st.cache_data(ttl=300)
+def get_batch_prices(tickers: tuple) -> dict:
+    result = {}
+    for t in tickers:
+        try:
+            fi = yf.Ticker(t).fast_info
+            price = getattr(fi, "last_price", 0) or 0
+            prev  = getattr(fi, "previous_close", price) or price
+            chg   = (price - prev) / prev * 100 if prev else 0
+            result[t] = {"price": price, "chg": chg}
+        except Exception:
+            result[t] = {"price": 0, "chg": 0}
+    return result
+
+# ══════════════════ TAB 9: SECTOR EXPLORER ══════════════════
+with tabs[8]:
+    lang_se = lang
+
+    st.markdown(f"""
+    <div style='background:linear-gradient(135deg,#0D1B2A,#1A2744);border-radius:14px;
+                padding:16px 24px;margin-bottom:20px;border:1px solid #2E3250;'>
+        <div style='font-size:1.3rem;font-weight:800;color:#FFA500;'>
+            {'🗂️ 전 산업 섹터 탐색기' if lang_se=='ko' else '🗂️ Global Sector Explorer'}
+        </div>
+        <div style='color:#8B9DB0;font-size:0.82rem;margin-top:4px;'>
+            {'섹터 클릭 → 기업 목록 보기 → 기업 클릭 → 바로 차트·예측으로 이동'
+             if lang_se=='ko' else
+             'Click sector → view companies → click company → instant chart & analysis'}
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
+
+    # ── Sector grid ──
+    st.markdown(f"<div class='section-header'>{'섹터 선택' if lang_se=='ko' else 'Select Sector'}</div>",
+                unsafe_allow_html=True)
+
+    GRID_COLS = 5
+    sector_rows = [SECTOR_DB[i:i+GRID_COLS] for i in range(0, len(SECTOR_DB), GRID_COLS)]
+    for sector_row in sector_rows:
+        row_cols = st.columns(GRID_COLS)
+        for col_se, sector in zip(row_cols, sector_row):
+            label = sector["label_ko"] if lang_se == "ko" else sector["label_en"]
+            is_active = st.session_state.selected_sector == sector["id"]
+            border = f"2px solid {sector['color']}" if is_active else f"1px solid {sector['color']}40"
+            bg = f"{sector['color']}25" if is_active else "#1A1F35"
+            with col_se:
+                if st.button(
+                    f"{sector['icon']} {label}",
+                    key=f"sector_btn_{sector['id']}",
+                    use_container_width=True,
+                ):
+                    if st.session_state.selected_sector == sector["id"]:
+                        st.session_state.selected_sector = None
+                    else:
+                        st.session_state.selected_sector = sector["id"]
+                    st.rerun()
+                n_cos = len(sector["companies"])
+                st.markdown(
+                    f"<div style='text-align:center;color:{sector['color']};font-size:0.7rem;"
+                    f"margin-top:-8px;margin-bottom:6px;'>{n_cos} {'기업' if lang_se=='ko' else 'companies'}</div>",
+                    unsafe_allow_html=True,
+                )
+
+    # ── Company list for selected sector ──
+    if st.session_state.selected_sector:
+        sector_data = next((s for s in SECTOR_DB if s["id"] == st.session_state.selected_sector), None)
+        if sector_data:
+            st.markdown("<br>", unsafe_allow_html=True)
+            label_s = sector_data["label_ko"] if lang_se == "ko" else sector_data["label_en"]
+            color_s = sector_data["color"]
+            st.markdown(f"""
+            <div style='border-left:4px solid {color_s};padding:10px 18px;
+                        background:{color_s}15;border-radius:0 10px 10px 0;margin-bottom:18px;'>
+                <span style='font-size:1.1rem;font-weight:700;color:{color_s};'>
+                    {sector_data['icon']} {label_s}
+                </span>
+                <span style='color:#8B9DB0;font-size:0.82rem;margin-left:12px;'>
+                    {len(sector_data['companies'])} {'기업' if lang_se=='ko' else 'companies'} — {'클릭하면 분석 화면으로 이동' if lang_se=='ko' else 'Click to analyze'}
+                </span>
+            </div>
+            """, unsafe_allow_html=True)
+
+            # Fetch live prices
+            all_tickers = tuple(c[0] for c in sector_data["companies"]
+                                if not c[0].endswith("=F") and "." not in c[0]
+                                and c[0] not in ("CATL","X","VOW","BMW","LG","CRCL","MDIA","BRCM"))
+            with st.spinner("Loading prices..." if lang_se == "en" else "시세 로딩 중..."):
+                prices_se = get_batch_prices(all_tickers)
+
+            # Company cards
+            CARD_COLS = 4
+            companies = sector_data["companies"]
+            for row_s in range(0, len(companies), CARD_COLS):
+                row_cos = companies[row_s:row_s+CARD_COLS]
+                card_cols = st.columns(CARD_COLS)
+                for card_col, (sym, name, role, flag) in zip(card_cols, row_cos):
+                    pd_s    = prices_se.get(sym, {})
+                    price_s = pd_s.get("price", 0)
+                    chg_s   = pd_s.get("chg", 0)
+                    chg_c   = "#00D4AA" if chg_s >= 0 else "#FF4B4B"
+                    arrow_s = "▲" if chg_s >= 0 else "▼"
+                    price_display = f"${price_s:,.2f}" if price_s else "—"
+
+                    with card_col:
+                        if st.button(
+                            f"📈 {name}",
+                            key=f"co_btn_{sector_data['id']}_{sym}",
+                            use_container_width=True,
+                            type="primary",
+                        ):
+                            st.session_state.ticker = sym
+                            st.rerun()
+                        st.markdown(f"""
+                        <div style='background:#0F1527;border:1px solid {color_s}50;
+                                    border-radius:10px;padding:10px 12px;margin:-8px 0 12px 0;'>
+                            <div style='display:flex;justify-content:space-between;'>
+                                <span style='color:{color_s};font-size:0.78rem;font-weight:700;'>{sym}</span>
+                                <span style='font-size:0.8rem;'>{flag}</span>
+                            </div>
+                            <div style='color:#8B9DB0;font-size:0.72rem;margin:3px 0;'>{role}</div>
+                            <div style='display:flex;justify-content:space-between;margin-top:6px;'>
+                                <span style='color:#FFFFFF;font-size:0.9rem;font-weight:700;'>{price_display}</span>
+                                <span style='color:{chg_c};font-size:0.78rem;'>{arrow_s}{abs(chg_s):.2f}%</span>
+                            </div>
+                        </div>
+                        """, unsafe_allow_html=True)
+
+            # Mini performance chart for top stocks in sector
+            st.markdown("<br>", unsafe_allow_html=True)
+            st.markdown(f"<div class='section-header'>{'섹터 주요 종목 1년 수익률 비교' if lang_se=='ko' else 'Sector Top Stocks — 1Y Return Comparison'}</div>",
+                        unsafe_allow_html=True)
+            top_tickers = [c[0] for c in companies[:8]
+                           if c[0] not in ("CL=F","NG=F","BTC-USD","ETH-USD","SOL-USD","BNB-USD","CATL","VOW","BMW","LG")]
+            if top_tickers:
+                with st.spinner("Loading comparison..." if lang_se=="en" else "비교 데이터 로딩 중..."):
+                    returns_data = {}
+                    for t_cmp in top_tickers[:8]:
+                        try:
+                            df_cmp = yf.download(t_cmp, period="1y", progress=False, auto_adjust=True)
+                            if not df_cmp.empty:
+                                cl = df_cmp["Close"]
+                                if cl.ndim == 2: cl = cl.iloc[:,0]
+                                cl = cl.astype(float).dropna()
+                                if len(cl) > 5:
+                                    ret = (cl.iloc[-1] / cl.iloc[0] - 1) * 100
+                                    returns_data[t_cmp] = round(float(ret), 2)
+                        except Exception:
+                            pass
+
+                if returns_data:
+                    sorted_r = sorted(returns_data.items(), key=lambda x: x[1], reverse=True)
+                    names_r  = [x[0] for x in sorted_r]
+                    vals_r   = [x[1] for x in sorted_r]
+                    colors_r = [color_s if v >= 0 else "#FF4B4B" for v in vals_r]
+
+                    fig_sr = go.Figure(go.Bar(
+                        x=names_r, y=vals_r,
+                        marker_color=colors_r,
+                        text=[f"{v:+.1f}%" for v in vals_r],
+                        textposition="outside",
+                    ))
+                    fig_sr.add_hline(y=0, line_color="#555", line_width=1)
+                    fig_sr.update_layout(
+                        template="plotly_dark", height=320,
+                        title=f"{'1년 수익률 비교 (%)' if lang_se=='ko' else '1-Year Return Comparison (%)'}",
+                        margin=dict(l=0,r=0,t=40,b=0),
+                        plot_bgcolor="#0E1117", paper_bgcolor="#0E1117",
+                        yaxis_title="Return %" if lang_se=="en" else "수익률 %",
+                    )
+                    st.plotly_chart(fig_sr, use_container_width=True)
+    else:
+        st.markdown(f"""
+        <div style='text-align:center;padding:40px 20px;color:#4A5568;'>
+            <div style='font-size:2.5rem;margin-bottom:12px;'>👆</div>
+            <div style='font-size:1rem;'>
+                {'위의 섹터 버튼을 클릭하면 해당 섹터 기업 목록이 표시됩니다.'
+                 if lang_se=='ko' else
+                 'Click any sector button above to see the companies in that sector.'}
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
+
 # ─── FOOTER ───────────────────────────────────────────────────────────────────
+st.markdown("<br><br>", unsafe_allow_html=True)
 st.markdown("<br><br>", unsafe_allow_html=True)
 st.markdown(f"""
 <div style='text-align:center;color:#4A5568;font-size:0.8rem;padding:16px;border-top:1px solid #2E3250;'>
