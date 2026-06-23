@@ -3566,6 +3566,530 @@ with tabs[8]:
         </div>
         """, unsafe_allow_html=True)
 
+# ══════════════════ TAB 10: INVESTMENT ANALYSIS ══════════════════
+with tabs[9]:
+    lang_inv = st.session_state.lang
+    st.markdown(f"<div class='section-header'>{'📈 투자 분석 대시보드' if lang_inv=='ko' else '📈 Investment Analysis Dashboard'}</div>", unsafe_allow_html=True)
+    st.markdown(f"<small style='color:#8B9DB0;'>{'실시간 yFinance 데이터 기반 | 투자 결정은 전문가와 상담하세요' if lang_inv=='ko' else 'Real-time yFinance data | Consult a professional before investing'}</small>", unsafe_allow_html=True)
+    st.markdown("<br>", unsafe_allow_html=True)
+
+    # Fetch fresh financials
+    inv_info = info  # reuse already loaded info dict
+
+    def safe(val, fmt=None, suffix=""):
+        if val is None or val == "N/A" or (isinstance(val, float) and (val != val)):
+            return "N/A"
+        try:
+            if fmt == "pct":
+                return f"{float(val)*100:.1f}%"
+            elif fmt == "x":
+                return f"{float(val):.2f}x"
+            elif fmt == "f2":
+                return f"{float(val):.2f}"
+            elif fmt == "big":
+                v = float(val)
+                if abs(v) >= 1e12: return f"${v/1e12:.2f}T"
+                if abs(v) >= 1e9:  return f"${v/1e9:.1f}B"
+                if abs(v) >= 1e6:  return f"${v/1e6:.0f}M"
+                return f"${v:,.0f}"
+            else:
+                return str(val)
+        except Exception:
+            return "N/A"
+
+    # ── Section 1: Valuation ──
+    st.markdown(f"### {gl('PER', '💰 가치평가 (Valuation)' if lang_inv=='ko' else '💰 Valuation')}", unsafe_allow_html=True)
+
+    per  = inv_info.get("trailingPE") or inv_info.get("forwardPE")
+    pbr  = inv_info.get("priceToBook")
+    peg  = inv_info.get("pegRatio")
+    ps   = inv_info.get("priceToSalesTrailing12Months")
+    ev_ebitda = inv_info.get("enterpriseToEbitda")
+
+    val_metrics = [
+        ("PER", safe(per, "f2"), "PER", "낮을수록 저평가" if lang_inv=="ko" else "Lower = undervalued"),
+        ("PBR", safe(pbr, "f2"), "PBR", "1 미만 = 자산 대비 저평가" if lang_inv=="ko" else "< 1 = below book value"),
+        ("PEG", safe(peg, "f2"), "PEG", "1 미만 = 성장 대비 저평가" if lang_inv=="ko" else "< 1 = undervalued vs growth"),
+        ("P/S", safe(ps, "f2"), "P/S Ratio", "낮을수록 매출 대비 저평가" if lang_inv=="ko" else "Lower = cheaper vs sales"),
+        ("EV/EBITDA", safe(ev_ebitda, "f2"), "EV/EBITDA", "10 미만 = 저평가 기준" if lang_inv=="ko" else "Below 10 = generally cheap"),
+    ]
+
+    v_cols = st.columns(5)
+    for col, (name, val, gl_key, hint) in zip(v_cols, val_metrics):
+        try:
+            fval = float(val.replace("x","").replace("%","")) if val != "N/A" else None
+        except Exception:
+            fval = None
+        # Color coding
+        color = "#8B9DB0"
+        if name == "PER" and fval is not None:
+            color = "#00D4AA" if fval < 15 else "#FFA500" if fval < 30 else "#FF4B4B"
+        elif name == "PBR" and fval is not None:
+            color = "#00D4AA" if fval < 1 else "#FFA500" if fval < 3 else "#FF4B4B"
+        elif name == "PEG" and fval is not None:
+            color = "#00D4AA" if fval < 1 else "#FFA500" if fval < 2 else "#FF4B4B"
+        elif name == "EV/EBITDA" and fval is not None:
+            color = "#00D4AA" if fval < 10 else "#FFA500" if fval < 20 else "#FF4B4B"
+        col.markdown(f"""
+        <div class='metric-card'>
+            <div class='metric-label'>{gl(gl_key, name)}</div>
+            <div style='font-size:1.4rem;font-weight:700;color:{color};'>{val}</div>
+            <div style='font-size:0.72rem;color:#6B7A8D;margin-top:4px;'>{hint}</div>
+        </div>
+        """, unsafe_allow_html=True)
+
+    # ── Section 2: Profitability ──
+    st.markdown("<br>", unsafe_allow_html=True)
+    st.markdown(f"### {'🏆 수익성 (Profitability)' if lang_inv=='ko' else '🏆 Profitability'}", unsafe_allow_html=True)
+
+    roe  = inv_info.get("returnOnEquity")
+    roa  = inv_info.get("returnOnAssets")
+    op_margin  = inv_info.get("operatingMargins")
+    net_margin = inv_info.get("profitMargins")
+    gross_margin = inv_info.get("grossMargins")
+
+    # ROIC approximation: Net Income / (Total Assets - Current Liabilities)
+    net_income = inv_info.get("netIncomeToCommon", 0) or 0
+    total_assets = inv_info.get("totalAssets", 0) or 0
+    curr_liab = inv_info.get("totalCurrentLiabilities", 0) or 0
+    roic_val = (net_income / (total_assets - curr_liab)) if (total_assets - curr_liab) > 0 else None
+
+    prof_metrics = [
+        ("ROE", safe(roe, "pct"), "ROE", "15%↑ 우수" if lang_inv=="ko" else "15%+ excellent"),
+        ("ROA", safe(roa, "pct"), "ROA", "5%↑ 양호" if lang_inv=="ko" else "5%+ good"),
+        ("ROIC", safe(roic_val, "pct") if roic_val else "N/A", "ROIC", "WACC 초과 시 가치창출" if lang_inv=="ko" else "Above WACC = value creation"),
+        ("영업이익률" if lang_inv=="ko" else "Op. Margin", safe(op_margin, "pct"), "Operating Margin", "높을수록 경쟁우위" if lang_inv=="ko" else "Higher = stronger moat"),
+        ("순이익률" if lang_inv=="ko" else "Net Margin", safe(net_margin, "pct"), "Net Margin", "순수 수익성" if lang_inv=="ko" else "Final profitability"),
+    ]
+
+    p_cols = st.columns(5)
+    for col, (name, val, gl_key, hint) in zip(p_cols, prof_metrics):
+        try:
+            fval = float(val.replace("%","")) if val != "N/A" else None
+        except Exception:
+            fval = None
+        color = "#8B9DB0"
+        if fval is not None:
+            color = "#00D4AA" if fval >= 15 else "#FFA500" if fval >= 5 else "#FF4B4B"
+        col.markdown(f"""
+        <div class='metric-card'>
+            <div class='metric-label'>{gl(gl_key, name)}</div>
+            <div style='font-size:1.4rem;font-weight:700;color:{color};'>{val}</div>
+            <div style='font-size:0.72rem;color:#6B7A8D;margin-top:4px;'>{hint}</div>
+        </div>
+        """, unsafe_allow_html=True)
+
+    # ── Section 3: Growth ──
+    st.markdown("<br>", unsafe_allow_html=True)
+    st.markdown(f"### {'📈 성장성 (Growth)' if lang_inv=='ko' else '📈 Growth'}", unsafe_allow_html=True)
+
+    rev_growth   = inv_info.get("revenueGrowth")
+    earn_growth  = inv_info.get("earningsGrowth")
+    eps_trail    = inv_info.get("trailingEps")
+    eps_fwd      = inv_info.get("forwardEps")
+    eps_growth   = ((eps_fwd - eps_trail) / abs(eps_trail)) if eps_trail and eps_fwd and eps_trail != 0 else None
+    revenue_ttm  = inv_info.get("totalRevenue")
+    analyst_tgt  = inv_info.get("targetMeanPrice")
+    curr_pr      = inv_info.get("currentPrice") or inv_info.get("regularMarketPrice") or current_price
+    upside       = ((analyst_tgt - curr_pr) / curr_pr) if analyst_tgt and curr_pr else None
+
+    growth_metrics = [
+        ("매출 성장률" if lang_inv=="ko" else "Revenue Growth", safe(rev_growth, "pct"), "Revenue Growth", "YoY 성장" if lang_inv=="ko" else "YoY growth"),
+        ("순이익 성장률" if lang_inv=="ko" else "Earnings Growth", safe(earn_growth, "pct"), "EPS Growth", "YoY 이익 성장" if lang_inv=="ko" else "YoY earnings growth"),
+        ("EPS (TTM)", safe(eps_trail, "f2"), "EPS", "주당순이익" if lang_inv=="ko" else "Trailing 12M EPS"),
+        ("EPS (선행)" if lang_inv=="ko" else "EPS (Fwd)", safe(eps_fwd, "f2"), "EPS Growth", "예상 주당순이익" if lang_inv=="ko" else "Forward EPS estimate"),
+        ("애널리스트 목표가" if lang_inv=="ko" else "Analyst Target", f"${analyst_tgt:,.2f}" if analyst_tgt else "N/A", "EPS Growth",
+         f"상승 여력 {upside*100:.1f}%" if upside and upside>=0 and lang_inv=="ko"
+         else f"Upside {upside*100:.1f}%" if upside and upside>=0
+         else f"하락 여지 {abs(upside)*100:.1f}%" if upside and lang_inv=="ko"
+         else f"Downside {abs(upside)*100:.1f}%" if upside else "N/A"),
+    ]
+
+    g_cols = st.columns(5)
+    for col, (name, val, gl_key, hint) in zip(g_cols, growth_metrics):
+        try:
+            fval = float(val.replace("%","").replace("$","").replace(",","")) if val not in ("N/A","") else None
+        except Exception:
+            fval = None
+        color = "#8B9DB0"
+        if "성장" in name or "Growth" in name:
+            if fval is not None:
+                color = "#00D4AA" if fval >= 10 else "#FFA500" if fval >= 0 else "#FF4B4B"
+        col.markdown(f"""
+        <div class='metric-card'>
+            <div class='metric-label'>{gl(gl_key, name)}</div>
+            <div style='font-size:1.3rem;font-weight:700;color:{color};'>{val}</div>
+            <div style='font-size:0.72rem;color:#6B7A8D;margin-top:4px;'>{hint}</div>
+        </div>
+        """, unsafe_allow_html=True)
+
+    # ── Section 4: Stability ──
+    st.markdown("<br>", unsafe_allow_html=True)
+    st.markdown(f"### {'🛡️ 안정성 (Stability)' if lang_inv=='ko' else '🛡️ Stability'}", unsafe_allow_html=True)
+
+    total_debt  = inv_info.get("totalDebt", 0) or 0
+    eq          = inv_info.get("totalStockholderEquity") or inv_info.get("bookValue", 0) or 0
+    de_ratio    = (total_debt / (eq * inv_info.get("sharesOutstanding", 1))) if eq and inv_info.get("sharesOutstanding") else inv_info.get("debtToEquity")
+    curr_ratio  = inv_info.get("currentRatio")
+    quick_ratio = inv_info.get("quickRatio")
+    ebit        = inv_info.get("ebit", 0) or 0
+    int_exp     = inv_info.get("interestExpense", 0) or 0
+    int_cov     = abs(ebit / int_exp) if int_exp and int_exp != 0 and ebit else None
+    beta_val    = inv_info.get("beta")
+
+    stab_metrics = [
+        ("부채비율" if lang_inv=="ko" else "Debt/Equity", safe(de_ratio, "f2"), "Debt/Equity", "낮을수록 안전" if lang_inv=="ko" else "Lower = safer"),
+        ("유동비율" if lang_inv=="ko" else "Current Ratio", safe(curr_ratio, "f2"), "Current Ratio", "1.5↑ 안전" if lang_inv=="ko" else "1.5+ healthy"),
+        ("당좌비율" if lang_inv=="ko" else "Quick Ratio", safe(quick_ratio, "f2"), "Current Ratio", "1.0↑ 양호" if lang_inv=="ko" else "1.0+ good"),
+        ("이자보상배율" if lang_inv=="ko" else "Interest Coverage", safe(int_cov, "f2") if int_cov else "N/A", "Interest Coverage", "3↑ 안전" if lang_inv=="ko" else "3+ safe"),
+        ("베타" if lang_inv=="ko" else "Beta", safe(beta_val, "f2"), "Beta vs S&P 500", "1 초과=고변동성" if lang_inv=="ko" else ">1 = more volatile"),
+    ]
+
+    s_cols = st.columns(5)
+    for col, (name, val, gl_key, hint) in zip(s_cols, stab_metrics):
+        try:
+            fval = float(val.replace("%","")) if val != "N/A" else None
+        except Exception:
+            fval = None
+        color = "#8B9DB0"
+        if "부채" in name or "Debt" in name:
+            if fval is not None:
+                color = "#00D4AA" if fval < 1 else "#FFA500" if fval < 2 else "#FF4B4B"
+        elif "유동" in name or "Current" in name or "Quick" in name:
+            if fval is not None:
+                color = "#00D4AA" if fval >= 1.5 else "#FFA500" if fval >= 1 else "#FF4B4B"
+        elif "이자" in name or "Interest" in name:
+            if fval is not None:
+                color = "#00D4AA" if fval >= 3 else "#FFA500" if fval >= 1.5 else "#FF4B4B"
+        col.markdown(f"""
+        <div class='metric-card'>
+            <div class='metric-label'>{gl(gl_key, name)}</div>
+            <div style='font-size:1.4rem;font-weight:700;color:{color};'>{val}</div>
+            <div style='font-size:0.72rem;color:#6B7A8D;margin-top:4px;'>{hint}</div>
+        </div>
+        """, unsafe_allow_html=True)
+
+    # ── Section 5: Cash Flow ──
+    st.markdown("<br>", unsafe_allow_html=True)
+    st.markdown(f"### {'💵 현금흐름 (Cash Flow)' if lang_inv=='ko' else '💵 Cash Flow'}", unsafe_allow_html=True)
+
+    op_cf   = inv_info.get("operatingCashflow") or inv_info.get("totalCashFromOperatingActivities")
+    capex   = inv_info.get("capitalExpenditures", 0) or 0
+    fcf_val = (op_cf + capex) if op_cf else None  # capex is usually negative in yf
+    mkt_cap_v = inv_info.get("marketCap", 0) or 0
+    fcf_yield_v = (fcf_val / mkt_cap_v) if fcf_val and mkt_cap_v else None
+    div_yield   = inv_info.get("dividendYield")
+    payout_r    = inv_info.get("payoutRatio")
+    free_cf     = inv_info.get("freeCashflow")
+    if free_cf:
+        fcf_val = free_cf  # prefer direct FCF if available
+
+    cf_metrics = [
+        ("영업현금흐름" if lang_inv=="ko" else "Operating CF", safe(op_cf, "big"), "Operating CF", "실제 현금 창출력" if lang_inv=="ko" else "Real cash generation"),
+        ("FCF", safe(fcf_val, "big") if fcf_val else "N/A", "FCF", "주주 환원 여력" if lang_inv=="ko" else "Available for shareholders"),
+        ("FCF 수익률" if lang_inv=="ko" else "FCF Yield", safe(fcf_yield_v, "pct") if fcf_yield_v else "N/A", "FCF Yield", "높을수록 저평가" if lang_inv=="ko" else "Higher = undervalued"),
+        ("배당수익률" if lang_inv=="ko" else "Div. Yield", safe(div_yield, "pct") if div_yield else "무배당" if lang_inv=="ko" else "No dividend", "FCF", "현금 배당 비율" if lang_inv=="ko" else "Cash return to shareholders"),
+        ("배당성향" if lang_inv=="ko" else "Payout Ratio", safe(payout_r, "pct") if payout_r else "N/A", "FCF", "순이익 중 배당 비중" if lang_inv=="ko" else "% of earnings paid as dividend"),
+    ]
+
+    c_cols = st.columns(5)
+    for col, (name, val, gl_key, hint) in zip(c_cols, cf_metrics):
+        color = "#FFA500"
+        if "무배당" in str(val) or "No dividend" in str(val):
+            color = "#8B9DB0"
+        col.markdown(f"""
+        <div class='metric-card'>
+            <div class='metric-label'>{gl(gl_key, name)}</div>
+            <div style='font-size:1.2rem;font-weight:700;color:{color};'>{val}</div>
+            <div style='font-size:0.72rem;color:#6B7A8D;margin-top:4px;'>{hint}</div>
+        </div>
+        """, unsafe_allow_html=True)
+
+    # ── Section 6: Academic Models ──
+    st.markdown("<br>", unsafe_allow_html=True)
+    st.markdown(f"### {'🎓 학술 투자 모델 분석' if lang_inv=='ko' else '🎓 Academic Investment Models'}", unsafe_allow_html=True)
+
+    model_col1, model_col2 = st.columns(2)
+
+    # Graham Number
+    with model_col1:
+        eps_v = inv_info.get("trailingEps", 0) or 0
+        bps_v = inv_info.get("bookValue", 0) or 0
+        graham = None
+        if eps_v > 0 and bps_v > 0:
+            graham = (22.5 * eps_v * bps_v) ** 0.5
+        graham_str = f"${graham:,.2f}" if graham else "N/A (음수 EPS/BPS)"
+        upside_g = ((graham - curr_pr) / curr_pr * 100) if graham and curr_pr else None
+        g_color = "#00D4AA" if upside_g and upside_g > 0 else "#FF4B4B" if upside_g else "#8B9DB0"
+        graham_interpret = (
+            f"현재가 대비 {'저평가' if upside_g and upside_g>0 else '고평가'} {abs(upside_g):.1f}%" if upside_g else
+            ("EPS 또는 BPS가 음수여서 계산 불가" if lang_inv=="ko" else "Cannot compute: negative EPS or BPS")
+        )
+        st.markdown(f"""
+        <div class='geo-card'>
+            <div style='font-weight:700;color:#FFD700;font-size:1rem;'>{gl("Graham Number", "📐 그레이엄 넘버 (Graham Number)")}</div>
+            <div style='font-size:0.82rem;color:#B0BEC5;margin:6px 0;'>
+                {"벤저민 그레이엄의 안전마진 계산: √(22.5 × EPS × BPS)" if lang_inv=="ko" else "Benjamin Graham's intrinsic value: √(22.5 × EPS × BPS)"}
+            </div>
+            <div style='font-size:1.6rem;font-weight:800;color:{g_color};'>{graham_str}</div>
+            <div style='font-size:0.85rem;color:#B0BEC5;margin-top:6px;'>{graham_interpret}</div>
+            <div style='font-size:0.78rem;color:#6B7A8D;margin-top:4px;'>EPS: {safe(eps_v,"f2")} | BPS: {safe(bps_v,"f2")}</div>
+        </div>
+        """, unsafe_allow_html=True)
+
+    # Piotroski F-Score
+    with model_col2:
+        # Calculate simplified Piotroski F-Score (9 criteria)
+        pio_score = 0
+        pio_details = []
+        roa_v = inv_info.get("returnOnAssets", 0) or 0
+        op_cf_v2 = (op_cf or 0)
+        # Profitability (4 signals)
+        if roa_v > 0: pio_score += 1; pio_details.append(("ROA > 0", True))
+        else: pio_details.append(("ROA > 0", False))
+        if op_cf_v2 > 0: pio_score += 1; pio_details.append(("영업현금흐름 > 0" if lang_inv=="ko" else "Op. CF > 0", True))
+        else: pio_details.append(("영업현금흐름 > 0" if lang_inv=="ko" else "Op. CF > 0", False))
+        if earn_growth and earn_growth > 0: pio_score += 1; pio_details.append(("이익 증가" if lang_inv=="ko" else "Earnings↑", True))
+        else: pio_details.append(("이익 증가" if lang_inv=="ko" else "Earnings↑", False))
+        if op_cf_v2 > 0 and roa_v > 0 and op_cf_v2 > net_income: pio_score += 1; pio_details.append(("Accruals 건전" if lang_inv=="ko" else "Accruals OK", True))
+        else: pio_details.append(("Accruals 건전" if lang_inv=="ko" else "Accruals OK", False))
+        # Leverage / Liquidity (3 signals)
+        de_num = inv_info.get("debtToEquity", 100) or 100
+        if de_num < 100: pio_score += 1; pio_details.append(("부채비율 감소" if lang_inv=="ko" else "Leverage↓", True))
+        else: pio_details.append(("부채비율 감소" if lang_inv=="ko" else "Leverage↓", False))
+        cr_v = inv_info.get("currentRatio", 0) or 0
+        if cr_v > 1.5: pio_score += 1; pio_details.append(("유동비율 양호" if lang_inv=="ko" else "Liquidity OK", True))
+        else: pio_details.append(("유동비율 양호" if lang_inv=="ko" else "Liquidity OK", False))
+        pio_details.append(("주식희석 없음" if lang_inv=="ko" else "No dilution", None))  # simplified
+        # Operating Efficiency (2 signals)
+        gm = inv_info.get("grossMargins", 0) or 0
+        if gm > 0.3: pio_score += 1; pio_details.append(("매출총이익률 양호" if lang_inv=="ko" else "Gross Margin OK", True))
+        else: pio_details.append(("매출총이익률 양호" if lang_inv=="ko" else "Gross Margin OK", False))
+        at = inv_info.get("assetTurnover") or (inv_info.get("totalRevenue", 0) / total_assets if total_assets else None)
+        if at and at > 0.5: pio_score += 1; pio_details.append(("자산회전율 양호" if lang_inv=="ko" else "Asset Turnover OK", True))
+        else: pio_details.append(("자산회전율 양호" if lang_inv=="ko" else "Asset Turnover OK", False))
+
+        pio_color = "#00D4AA" if pio_score >= 7 else "#FFA500" if pio_score >= 4 else "#FF4B4B"
+        pio_label = ("강한 매수 신호" if pio_score >= 7 else "중립" if pio_score >= 4 else "약세 신호") if lang_inv=="ko" else ("Strong Buy Signal" if pio_score >= 7 else "Neutral" if pio_score >= 4 else "Weak Signal")
+        details_html = " ".join([
+            f"<span style='color:{'#00D4AA' if ok else '#FF4B4B' if ok is not None else '#8B9DB0'};font-size:0.72rem;'>{'✓' if ok else '✗' if ok is not None else '?'} {d}</span>"
+            for d, ok in pio_details
+        ])
+        st.markdown(f"""
+        <div class='geo-card'>
+            <div style='font-weight:700;color:#AB63FA;font-size:1rem;'>{gl("Piotroski F-Score", "📊 피오트로스키 F-스코어")}</div>
+            <div style='font-size:0.82rem;color:#B0BEC5;margin:6px 0;'>
+                {"재무 건전성 9개 항목 평가 (0~9점)" if lang_inv=="ko" else "9-point financial health scoring (0–9)"}
+            </div>
+            <div style='font-size:2rem;font-weight:800;color:{pio_color};'>{pio_score} <span style='font-size:1rem;'>/9</span></div>
+            <div style='font-size:0.88rem;color:{pio_color};font-weight:600;'>{pio_label}</div>
+            <div style='margin-top:8px;line-height:1.8;'>{details_html}</div>
+        </div>
+        """, unsafe_allow_html=True)
+
+    # Row 2: Altman Z-Score + Magic Formula
+    az_col, mf_col = st.columns(2)
+
+    with az_col:
+        # Altman Z-Score (simplified for large public companies)
+        shares_out = inv_info.get("sharesOutstanding", 0) or 0
+        try:
+            mkt_cap_z = curr_pr * shares_out if curr_pr and shares_out else (mkt_cap_v or 0)
+            ta = float(inv_info.get("totalAssets", 1) or 1)
+            wc = float((inv_info.get("totalCurrentAssets", 0) or 0) - (inv_info.get("totalCurrentLiabilities", 0) or 0))
+            re = float(inv_info.get("retainedEarnings", 0) or 0)
+            ebit_z = float(inv_info.get("ebit", 0) or 0)
+            td = float(inv_info.get("totalDebt", 0) or 0)
+            rev_z = float(inv_info.get("totalRevenue", 0) or 0)
+            if ta > 0 and td > 0:
+                X1 = wc / ta
+                X2 = re / ta
+                X3 = ebit_z / ta
+                X4 = mkt_cap_z / td
+                X5 = rev_z / ta
+                z_score = 1.2*X1 + 1.4*X2 + 3.3*X3 + 0.6*X4 + 1.0*X5
+                z_color = "#00D4AA" if z_score > 3 else "#FFA500" if z_score > 1.8 else "#FF4B4B"
+                z_label = ("안전 구간" if z_score > 3 else "회색 지대" if z_score > 1.8 else "위험 구간") if lang_inv=="ko" else ("Safe Zone" if z_score > 3 else "Grey Zone" if z_score > 1.8 else "Distress Zone")
+                z_str = f"{z_score:.2f}"
+            else:
+                z_str, z_color, z_label = "N/A", "#8B9DB0", "데이터 부족" if lang_inv=="ko" else "Insufficient data"
+        except Exception:
+            z_str, z_color, z_label = "N/A", "#8B9DB0", "계산 오류" if lang_inv=="ko" else "Calc error"
+
+        az_col.markdown(f"""
+        <div class='geo-card'>
+            <div style='font-weight:700;color:#FF8C00;font-size:1rem;'>{gl("Altman Z-Score", "⚠️ 알트만 Z-스코어")}</div>
+            <div style='font-size:0.82rem;color:#B0BEC5;margin:6px 0;'>
+                {"부도 위험 예측 모델 | 3↑ 안전, 1.8~3 회색지대, 1.8↓ 위험" if lang_inv=="ko" else "Bankruptcy prediction model | >3 safe, 1.8-3 grey, <1.8 distress"}
+            </div>
+            <div style='font-size:2rem;font-weight:800;color:{z_color};'>{z_str}</div>
+            <div style='font-size:0.9rem;color:{z_color};font-weight:600;'>{z_label}</div>
+            <div style='font-size:0.78rem;color:#6B7A8D;margin-top:6px;'>
+                {"공식: 1.2×유동자본/자산 + 1.4×유보이익/자산 + 3.3×EBIT/자산 + 0.6×시총/부채 + 매출/자산" if lang_inv=="ko"
+                 else "Formula: 1.2×WC/TA + 1.4×RE/TA + 3.3×EBIT/TA + 0.6×MktCap/Debt + Rev/TA"}
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
+
+    with mf_col:
+        # Magic Formula (Joel Greenblatt): high ROIC + low EV/EBIT
+        try:
+            ev = inv_info.get("enterpriseValue", 0) or 0
+            ebit_mf = inv_info.get("ebit", 0) or 0
+            ev_ebit = ev / ebit_mf if ebit_mf and ebit_mf > 0 and ev > 0 else None
+            roic_mf = roic_val
+            if ev_ebit and roic_mf:
+                # Simplified rank: lower ev_ebit + higher roic = better
+                mf_score_str = f"EV/EBIT: {ev_ebit:.1f}x | ROIC: {roic_mf*100:.1f}%"
+                mf_good = ev_ebit < 15 and roic_mf > 0.15
+                mf_ok = ev_ebit < 25 and roic_mf > 0.08
+                mf_color = "#00D4AA" if mf_good else "#FFA500" if mf_ok else "#FF4B4B"
+                mf_label = ("매력적" if mf_good else "보통" if mf_ok else "비매력적") if lang_inv=="ko" else ("Attractive" if mf_good else "Neutral" if mf_ok else "Unattractive")
+            else:
+                mf_score_str = "N/A"
+                mf_color = "#8B9DB0"
+                mf_label = "데이터 부족" if lang_inv=="ko" else "Insufficient data"
+        except Exception:
+            mf_score_str = "N/A"
+            mf_color = "#8B9DB0"
+            mf_label = "계산 오류" if lang_inv=="ko" else "Calc error"
+
+        mf_col.markdown(f"""
+        <div class='geo-card'>
+            <div style='font-weight:700;color:#64B5F6;font-size:1rem;'>{gl("Magic Formula", "✨ 매직 포뮬러 (그린블라트)")}</div>
+            <div style='font-size:0.82rem;color:#B0BEC5;margin:6px 0;'>
+                {"높은 ROIC + 낮은 EV/EBIT = 저평가 고수익 기업 선별" if lang_inv=="ko" else "High ROIC + Low EV/EBIT = undervalued high-quality company"}
+            </div>
+            <div style='font-size:1.3rem;font-weight:700;color:{mf_color};'>{mf_score_str}</div>
+            <div style='font-size:0.9rem;color:{mf_color};font-weight:600;margin-top:4px;'>{mf_label}</div>
+            <div style='font-size:0.78rem;color:#6B7A8D;margin-top:6px;'>
+                {"EV/EBIT 15↓ + ROIC 15%↑ = 강한 매수 신호" if lang_inv=="ko" else "EV/EBIT < 15 + ROIC > 15% = strong buy signal"}
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
+
+    # ── Section 7: DCF Simplified ──
+    st.markdown("<br>", unsafe_allow_html=True)
+    st.markdown(f"### {gl('DCF', '🔢 DCF 간이 내재가치 분석' if lang_inv=='ko' else '🔢 Simplified DCF Intrinsic Value')}", unsafe_allow_html=True)
+
+    dcf_col1, dcf_col2 = st.columns([2, 1])
+    with dcf_col1:
+        try:
+            fcf_dcf = fcf_val or (op_cf + capex if op_cf else None)
+            if fcf_dcf and fcf_dcf > 0 and shares_out > 0:
+                # DCF with 3-stage growth
+                wacc = 0.09  # typical 9% WACC
+                g1 = min(max(float(rev_growth or 0.05), 0.01), 0.30)  # Stage 1: current growth (capped)
+                g2 = g1 * 0.5  # Stage 2: half of current growth
+                g3 = 0.025    # Terminal growth rate
+
+                pv = 0
+                cf = fcf_dcf
+                for yr in range(1, 6):   # Stage 1: 5 years
+                    cf *= (1 + g1)
+                    pv += cf / (1 + wacc)**yr
+                for yr in range(6, 11):  # Stage 2: 5 years
+                    cf *= (1 + g2)
+                    pv += cf / (1 + wacc)**yr
+                terminal = cf * (1 + g3) / (wacc - g3)
+                pv += terminal / (1 + wacc)**10
+
+                dcf_per_share = pv / shares_out
+                margin_of_safety = (dcf_per_share - curr_pr) / curr_pr * 100 if curr_pr else 0
+                dcf_color = "#00D4AA" if margin_of_safety > 20 else "#FFA500" if margin_of_safety > -20 else "#FF4B4B"
+                dcf_signal = ("매수 유망 (안전마진 확보)" if margin_of_safety > 20 else "적정 가격" if margin_of_safety > -20 else "고평가 주의") if lang_inv=="ko" else ("Attractive (margin of safety)" if margin_of_safety > 20 else "Fairly valued" if margin_of_safety > -20 else "Potentially overvalued")
+
+                st.markdown(f"""
+                <div class='prediction-card' style='text-align:left;'>
+                    <div style='display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:16px;'>
+                        <div>
+                            <div style='color:#8B9DB0;font-size:0.85rem;margin-bottom:4px;'>{"DCF 내재가치 (주당)" if lang_inv=="ko" else "DCF Intrinsic Value (per share)"}</div>
+                            <div style='font-size:2rem;font-weight:800;color:{dcf_color};'>${dcf_per_share:,.2f}</div>
+                            <div style='font-size:0.9rem;color:{dcf_color};margin-top:4px;'>{dcf_signal}</div>
+                        </div>
+                        <div>
+                            <div style='color:#8B9DB0;font-size:0.85rem;'>{"현재가" if lang_inv=="ko" else "Current Price"}</div>
+                            <div style='font-size:1.4rem;font-weight:700;color:#FFFFFF;'>${curr_pr:,.2f}</div>
+                            <div style='font-size:0.85rem;color:{dcf_color};'>{margin_of_safety:+.1f}% {"괴리" if lang_inv=="ko" else "deviation"}</div>
+                        </div>
+                        <div>
+                            <div style='color:#8B9DB0;font-size:0.8rem;'>{"가정 (WACC / 성장률1 / 성장률2 / 영구)" if lang_inv=="ko" else "Assumptions (WACC / G1 / G2 / Terminal)"}</div>
+                            <div style='font-size:0.85rem;color:#B0BEC5;'>{wacc*100:.1f}% / {g1*100:.1f}% / {g2*100:.1f}% / {g3*100:.1f}%</div>
+                            <div style='font-size:0.78rem;color:#6B7A8D;margin-top:4px;'>{"※ 단순화된 추정치. 실제 투자 시 전문가 분석 필요" if lang_inv=="ko" else "⚠ Simplified estimate. Consult expert before investing"}</div>
+                        </div>
+                    </div>
+                </div>
+                """, unsafe_allow_html=True)
+            else:
+                st.info("FCF가 0 이하이거나 데이터 부족으로 DCF 계산이 불가합니다." if lang_inv=="ko" else "Cannot compute DCF: FCF ≤ 0 or insufficient data.")
+        except Exception as e:
+            st.info(f"DCF 계산 중 오류: {e}" if lang_inv=="ko" else f"DCF calculation error: {e}")
+
+    with dcf_col2:
+        st.markdown(f"""
+        <div class='summary-box' style='height:100%;'>
+            <div style='font-weight:700;color:#FFA500;margin-bottom:8px;'>{gl("DCF", "DCF 모델이란?")}</div>
+            <div style='font-size:0.82rem;color:#B0BEC5;line-height:1.7;'>
+                {"• 미래 잉여현금흐름을 현재 가치로 할인<br>• 3단계 성장 모델 적용<br>• 1~5년: 현재 성장률 유지<br>• 6~10년: 절반으로 감속<br>• 10년 이후: 영구성장률 2.5%<br>• WACC 9% 가정 (시장 평균)<br><br><span style='color:#FF8C00;'>⚠ 단순화된 모델로 참고용만 사용" if lang_inv=="ko" else
+                "• Discounts future free cash flows<br>• 3-stage growth model<br>• Yr 1-5: Current growth rate<br>• Yr 6-10: Half of current growth<br>• Beyond 10: 2.5% terminal growth<br>• WACC assumed at 9%<br><br><span style='color:#FF8C00;'>⚠ Simplified model — reference only"}</span>
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
+
+    # ── Section 8: AI One-line Summary ──
+    st.markdown("<br>", unsafe_allow_html=True)
+    st.markdown(f"### {'🤖 AI 종합 투자 분석 요약' if lang_inv=='ko' else '🤖 AI Investment Summary'}", unsafe_allow_html=True)
+
+    # Generate rule-based AI summary
+    def generate_invest_summary(inv_info, lang_inv, per, pbr, roe, op_margin, rev_growth, fcf_val, pio_score, z_str):
+        signals = []
+        concerns = []
+        # Valuation
+        if per and float(per) < 15: signals.append("저PER 저평가" if lang_inv=="ko" else "low P/E undervaluation")
+        elif per and float(per) > 35: concerns.append("고PER 고평가 우려" if lang_inv=="ko" else "high P/E overvaluation risk")
+        if pbr and float(pbr) < 1: signals.append("PBR 1배 미만 자산 저평가" if lang_inv=="ko" else "trading below book value")
+        # Profitability
+        if roe and float(roe)*100 > 15: signals.append(f"ROE {float(roe)*100:.0f}% 우수 수익성" if lang_inv=="ko" else f"excellent ROE {float(roe)*100:.0f}%")
+        if op_margin and float(op_margin)*100 > 20: signals.append("높은 영업이익률로 경쟁우위 확보" if lang_inv=="ko" else "high operating margin competitive moat")
+        # Growth
+        if rev_growth and float(rev_growth)*100 > 15: signals.append(f"매출 {float(rev_growth)*100:.0f}% 고성장" if lang_inv=="ko" else f"{float(rev_growth)*100:.0f}% revenue growth")
+        elif rev_growth and float(rev_growth)*100 < 0: concerns.append("매출 역성장" if lang_inv=="ko" else "revenue decline")
+        # Cash flow
+        if fcf_val and fcf_val > 0: signals.append("양호한 잉여현금흐름" if lang_inv=="ko" else "positive free cash flow")
+        else: concerns.append("FCF 마이너스" if lang_inv=="ko" else "negative FCF")
+        # Piotroski
+        if pio_score >= 7: signals.append(f"F-스코어 {pio_score}/9 재무 건전" if lang_inv=="ko" else f"F-Score {pio_score}/9 financially strong")
+        elif pio_score <= 2: concerns.append(f"F-스코어 {pio_score}/9 재무 부실" if lang_inv=="ko" else f"F-Score {pio_score}/9 financially weak")
+        # Z-Score
+        try:
+            z_v = float(z_str)
+            if z_v > 3: signals.append("부도 위험 낮음" if lang_inv=="ko" else "low bankruptcy risk")
+            elif z_v < 1.8: concerns.append("부도 위험 경고" if lang_inv=="ko" else "bankruptcy risk warning")
+        except Exception:
+            pass
+
+        if not signals and not concerns:
+            return ("데이터 부족으로 자동 분석이 어렵습니다. 직접 재무제표를 확인하세요." if lang_inv=="ko"
+                    else "Insufficient data for automated analysis. Please review financial statements directly.")
+
+        summary_parts = []
+        if signals:
+            summary_parts.append(("✅ 긍정 신호: " if lang_inv=="ko" else "✅ Positives: ") + " · ".join(signals[:3]))
+        if concerns:
+            summary_parts.append(("⚠️ 주의 사항: " if lang_inv=="ko" else "⚠️ Concerns: ") + " · ".join(concerns[:3]))
+        return " | ".join(summary_parts)
+
+    ai_summary = generate_invest_summary(inv_info, lang_inv, per, pbr, roe, op_margin, rev_growth, fcf_val, pio_score, z_str)
+    st.markdown(f"""
+    <div class='summary-box' style='border-color:#FFA500;'>
+        <div style='font-size:0.78rem;color:#8B9DB0;margin-bottom:6px;'>🤖 {"규칙 기반 자동 분석" if lang_inv=="ko" else "Rule-based Auto Analysis"} · {company_name} ({ticker})</div>
+        <div style='font-size:0.92rem;color:#EAEAEA;line-height:1.8;'>{ai_summary}</div>
+    </div>
+    """, unsafe_allow_html=True)
+
+    # Disclaimer
+    st.markdown(f"<small style='color:#4A5568;'>{'⚠️ 모든 지표는 참고용입니다. yFinance 실시간 데이터 기반. 투자는 본인 책임입니다.' if lang_inv=='ko' else '⚠️ All metrics for reference only. Based on yFinance real-time data. Invest at your own risk.'}</small>", unsafe_allow_html=True)
+
 # ─── FOOTER ───────────────────────────────────────────────────────────────────
 st.markdown("<br><br>", unsafe_allow_html=True)
 st.markdown("<br><br>", unsafe_allow_html=True)
