@@ -22,6 +22,12 @@ import json
 import re
 warnings.filterwarnings("ignore")
 
+try:
+    from streamlit_autorefresh import st_autorefresh
+    _HAS_AUTOREFRESH = True
+except ImportError:
+    _HAS_AUTOREFRESH = False
+
 # ─── PAGE CONFIG ──────────────────────────────────────────────────────────────
 st.set_page_config(
     page_title="US Market Intelligence | 미국 증시 인텔리전스",
@@ -219,6 +225,8 @@ if "geo_translated" not in st.session_state:
     st.session_state.geo_translated = False
 if "sidebar_view" not in st.session_state:
     st.session_state.sidebar_view = None  # None = normal tabs, "semi" or "sectors"
+if "data_fetched_at" not in st.session_state:
+    st.session_state.data_fetched_at = None
 
 def T(key):
     return TEXTS[st.session_state.lang].get(key, key)
@@ -674,7 +682,7 @@ def translate_to_korean(text: str) -> str:
         return text
 
 # ─── DATA FUNCTIONS ───────────────────────────────────────────────────────────
-@st.cache_data(ttl=300)
+@st.cache_data(ttl=300)   # 5분 — 주가 데이터
 def get_stock_data(ticker: str, period: str = "2y") -> pd.DataFrame:
     try:
         df = yf.download(ticker, period=period, progress=False, auto_adjust=True)
@@ -1247,6 +1255,11 @@ def build_geo_timeline(lang: str) -> go.Figure:
     )
     return fig
 
+# ─── AUTO REFRESH ────────────────────────────────────────────────────────────
+_REFRESH_INTERVAL_MS = 5 * 60 * 1000  # 5 minutes
+if _HAS_AUTOREFRESH:
+    st_autorefresh(interval=_REFRESH_INTERVAL_MS, limit=None, key="global_autorefresh")
+
 # ─── CUSTOM CSS ───────────────────────────────────────────────────────────────
 st.markdown("""
 <style>
@@ -1326,6 +1339,34 @@ st.markdown("""
         cursor: help;
         border-bottom: 1px dotted #FFA500;
         color: inherit;
+    }
+    .data-timestamp {
+        position: fixed;
+        top: 56px;
+        right: 18px;
+        z-index: 9999;
+        background: rgba(14,17,23,0.92);
+        border: 1px solid #2E3250;
+        border-radius: 20px;
+        padding: 4px 14px;
+        font-size: 0.72rem;
+        color: #8B9DB0;
+        backdrop-filter: blur(6px);
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        white-space: nowrap;
+    }
+    .data-timestamp .dot {
+        width: 7px; height: 7px;
+        border-radius: 50%;
+        background: #00D4AA;
+        display: inline-block;
+        animation: pulse 2s infinite;
+    }
+    @keyframes pulse {
+        0%,100% { opacity: 1; }
+        50%      { opacity: 0.3; }
     }
     .translate-btn {
         background: #1E2130;
@@ -1440,6 +1481,32 @@ with st.spinner(T("loading")):
     df_max = get_stock_data(ticker, "max")
     info = get_stock_info(ticker)
     macro_data = get_macro_data()
+
+# ── Record fetch timestamp ───────────────────────────────────────────────────
+_now_utc = datetime.utcnow()
+st.session_state.data_fetched_at = _now_utc
+
+# Determine market data as-of date (last trading day in price history)
+_market_date_str = ""
+if not df_2y.empty:
+    _last_idx = df_2y.index[-1]
+    _market_date_str = pd.Timestamp(_last_idx).strftime("%Y-%m-%d")
+
+_fetch_str = _now_utc.strftime("%Y-%m-%d %H:%M") + " UTC"
+_auto_label = ("5분마다 자동갱신" if lang == "ko" else "auto-refresh 5 min") if _HAS_AUTOREFRESH else ("수동 새로고침" if lang == "ko" else "manual refresh")
+_ts_label   = ("주가 기준일" if lang == "ko" else "Price date")
+_ts_fetched = ("조회 시각" if lang == "ko" else "Fetched")
+
+st.markdown(f"""
+<div class="data-timestamp">
+    <span class="dot"></span>
+    <span>{_ts_label}: <b style='color:#EAEAEA;'>{_market_date_str}</b></span>
+    <span style='color:#4A5568;'>|</span>
+    <span>{_ts_fetched}: <b style='color:#EAEAEA;'>{_fetch_str}</b></span>
+    <span style='color:#4A5568;'>|</span>
+    <span style='color:#00D4AA;'>{_auto_label}</span>
+</div>
+""", unsafe_allow_html=True)
 
 if df_2y.empty:
     st.error(T("error_ticker"))
