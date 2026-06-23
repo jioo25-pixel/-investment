@@ -227,6 +227,8 @@ if "sidebar_view" not in st.session_state:
     st.session_state.sidebar_view = None  # None = normal tabs, "semi" or "sectors"
 if "data_fetched_at" not in st.session_state:
     st.session_state.data_fetched_at = None
+if "show_ranker" not in st.session_state:
+    st.session_state.show_ranker = False
 
 def T(key):
     return TEXTS[st.session_state.lang].get(key, key)
@@ -958,6 +960,98 @@ def _digest_impact_summary(articles: list, lang: str) -> str:
         if market_move:  themes.append("⚡ **Major market event** — watch for elevated volatility")
         if not themes:   themes.append("📰 No major catalysts — general market flow monitoring")
         return " | ".join(themes)
+
+
+# ─── STOCK RANKER ────────────────────────────────────────────────────────────
+_RANKER_TICKERS = [
+    # Tech
+    ("AAPL","Apple","Technology"), ("MSFT","Microsoft","Technology"),
+    ("NVDA","NVIDIA","Technology"), ("GOOGL","Alphabet","Technology"),
+    ("META","Meta","Technology"),   ("AMZN","Amazon","Consumer"),
+    ("TSLA","Tesla","Consumer"),    ("AVGO","Broadcom","Technology"),
+    ("AMD","AMD","Technology"),     ("ORCL","Oracle","Technology"),
+    ("CRM","Salesforce","Technology"),("QCOM","Qualcomm","Technology"),
+    # Finance
+    ("JPM","JPMorgan","Finance"),   ("BAC","BofA","Finance"),
+    ("GS","Goldman","Finance"),     ("V","Visa","Finance"),
+    ("MA","Mastercard","Finance"),  ("BRK-B","Berkshire","Finance"),
+    # Healthcare
+    ("JNJ","J&J","Healthcare"),     ("UNH","UnitedHealth","Healthcare"),
+    ("LLY","Eli Lilly","Healthcare"),("ABBV","AbbVie","Healthcare"),
+    ("PFE","Pfizer","Healthcare"),
+    # Energy
+    ("XOM","ExxonMobil","Energy"),  ("CVX","Chevron","Energy"),
+    # Consumer
+    ("WMT","Walmart","Consumer"),   ("COST","Costco","Consumer"),
+    ("HD","Home Depot","Consumer"), ("MCD","McDonald's","Consumer"),
+    ("PG","P&G","Consumer"),        ("KO","Coca-Cola","Consumer"),
+    # Industrial / Other
+    ("CAT","Caterpillar","Industrial"),("BA","Boeing","Industrial"),
+    ("HON","Honeywell","Industrial"),("RTX","Raytheon","Industrial"),
+]
+
+
+@st.cache_data(ttl=3600)
+def compute_stock_rankings() -> list:
+    """
+    Compute a fast momentum-based predicted 12M return for a watchlist.
+    Uses:
+      - 12M linear regression slope (trend)
+      - 3M momentum (recent acceleration)
+      - Mean-reversion vs 200-day MA
+    Returns list of dicts sorted by predicted_return desc.
+    """
+    results = []
+    for sym, name, sector in _RANKER_TICKERS:
+        try:
+            df = yf.download(sym, period="1y", interval="1d",
+                             progress=False, auto_adjust=True)
+            if df.empty or len(df) < 50:
+                continue
+            close = df["Close"]
+            if close.ndim == 2:
+                close = close.iloc[:, 0]
+            prices = close.dropna().astype(float).values
+            n = len(prices)
+            cur = float(prices[-1])
+
+            # --- trend (linear regression annualised slope) ---
+            x = np.arange(n)
+            slope = np.polyfit(x, np.log(prices), 1)[0]   # daily log-return trend
+            trend_ret = float(np.exp(slope * 252) - 1) * 100   # annualised %
+
+            # --- 3-month momentum ---
+            mom_3m = float((prices[-1] / prices[max(0, n-63)] - 1) * 100)
+
+            # --- mean-reversion component ---
+            ma200 = float(np.mean(prices[-min(200, n):]))
+            rev   = float((ma200 - cur) / cur * 100 * 0.3)   # 30% pull toward MA
+
+            # --- ensemble predicted 12M return ---
+            pred_ret = trend_ret * 0.5 + mom_3m * 0.3 + rev * 0.2
+
+            # --- 1D change ---
+            chg_1d = float((prices[-1] / prices[-2] - 1) * 100) if n >= 2 else 0.0
+
+            # --- annualised vol ---
+            vol = float(np.std(np.diff(np.log(prices[-min(252,n):]))) * np.sqrt(252) * 100)
+
+            results.append({
+                "ticker":     sym,
+                "name":       name,
+                "sector":     sector,
+                "price":      cur,
+                "chg_1d":     chg_1d,
+                "pred_12m":   round(pred_ret, 1),
+                "mom_3m":     round(mom_3m, 1),
+                "trend_ann":  round(trend_ret, 1),
+                "vol_ann":    round(vol, 1),
+            })
+        except Exception:
+            continue
+
+    results.sort(key=lambda x: x["pred_12m"], reverse=True)
+    return results
 
 
 # Sector → relevant geo risk factor keys
@@ -2043,6 +2137,19 @@ lang   = st.session_state.lang
 
 # ─── SIDEBAR ──────────────────────────────────────────────────────────────────
 with st.sidebar:
+    # ── Ranker button (top of sidebar) ───────────────────────────────────────
+    _ranker_active = st.session_state.show_ranker
+    _ranker_lbl = ("📊 예측 수익률 순위 ✓" if _ranker_active else "📊 예측 수익률 순위")
+    if st.button(_ranker_lbl, use_container_width=True,
+                 type="primary" if _ranker_active else "secondary",
+                 key="sb_ranker"):
+        st.session_state.show_ranker = not _ranker_active
+        if st.session_state.show_ranker:
+            st.session_state.sidebar_view = None   # close semi/sector views
+        st.rerun()
+
+    st.divider()
+
     # Language toggle
     col_logo, col_lang = st.columns([2, 1])
     with col_logo:
@@ -3552,6 +3659,146 @@ def get_semi_prices(tickers: list) -> dict:
         except Exception:
             result[t] = {"price": 0, "chg": 0, "mktcap": 0}
     return result
+
+# ══════════════════ RANKER VIEW ══════════════════
+if st.session_state.show_ranker:
+    _r_lang = lang
+    st.markdown(f"""
+    <div style='background:linear-gradient(135deg,#0D1B2A,#1A2744);border-radius:14px;
+                padding:18px 28px;margin-bottom:20px;border:1px solid #2E3250;'>
+        <div style='font-size:1.4rem;font-weight:800;color:#FFA500;'>
+            📊 {'예측 수익률 순위 — 주요 종목 12개월 전망' if _r_lang=='ko' else 'Predicted 12M Return Ranking'}
+        </div>
+        <div style='color:#8B9DB0;font-size:0.82rem;margin-top:6px;'>
+            {'추세회귀(50%) + 3개월 모멘텀(30%) + 평균회귀(20%) 앙상블 모델 기준 | 1시간 캐시'
+             if _r_lang=='ko' else
+             'Ensemble: trend regression (50%) + 3M momentum (30%) + mean reversion (20%) | 1h cache'}
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
+
+    with st.spinner("📊 " + ("수익률 예측 계산 중..." if _r_lang=="ko" else "Computing predictions...")):
+        _rankings = compute_stock_rankings()
+
+    if _rankings:
+        # Sector filter
+        _all_sectors = sorted(set(r["sector"] for r in _rankings))
+        _sect_opts   = (["전체"] if _r_lang=="ko" else ["All"]) + _all_sectors
+        _sel_sect    = st.selectbox(
+            ("섹터 필터" if _r_lang=="ko" else "Sector Filter"),
+            _sect_opts, index=0, key="ranker_sector_filter"
+        )
+        _filtered = (
+            _rankings if _sel_sect in ("전체","All")
+            else [r for r in _rankings if r["sector"] == _sel_sect]
+        )
+
+        # Summary metrics row
+        _top5_avg  = round(sum(r["pred_12m"] for r in _filtered[:5]) / min(5, len(_filtered)), 1)
+        _pos_count = sum(1 for r in _filtered if r["pred_12m"] > 0)
+        _neg_count = len(_filtered) - _pos_count
+        _mc1, _mc2, _mc3, _mc4 = st.columns(4)
+        _mc1.metric("📈 " + ("상위 5개 평균 예측" if _r_lang=="ko" else "Top-5 avg pred"), f"{_top5_avg:+.1f}%")
+        _mc2.metric("🟢 " + ("상승 예측" if _r_lang=="ko" else "Bullish"), f"{_pos_count}종목" if _r_lang=="ko" else f"{_pos_count} stocks")
+        _mc3.metric("🔴 " + ("하락 예측" if _r_lang=="ko" else "Bearish"), f"{_neg_count}종목" if _r_lang=="ko" else f"{_neg_count} stocks")
+        _mc4.metric("🏆 " + ("1위" if _r_lang=="ko" else "#1"), f"{_filtered[0]['name']} {_filtered[0]['pred_12m']:+.1f}%" if _filtered else "—")
+
+        st.markdown("<br>", unsafe_allow_html=True)
+
+        # Rank table cards
+        _medal = ["🥇","🥈","🥉"] + [f"{i}위" if _r_lang=="ko" else f"#{i}" for i in range(4, len(_filtered)+1)]
+        for rank_i, row in enumerate(_filtered):
+            _pred   = row["pred_12m"]
+            _mom    = row["mom_3m"]
+            _trend  = row["trend_ann"]
+            _vol    = row["vol_ann"]
+            _1d     = row["chg_1d"]
+            _pcolor = "#FF4040" if _pred >= 0 else "#4488FF"
+            _1dcolor= "#FF4040" if _1d  >= 0 else "#4488FF"
+            _bar_w  = min(abs(_pred), 80)
+            _bar_col= "#FF4040" if _pred >= 0 else "#4488FF"
+            _med    = _medal[rank_i] if rank_i < len(_medal) else f"#{rank_i+1}"
+            _sig    = ("강매수" if _pred > 20 else "매수" if _pred > 5 else
+                       "중립" if _pred > -5 else "매도" if _pred > -20 else "강매도") if _r_lang=="ko" else \
+                      ("Strong Buy" if _pred > 20 else "Buy" if _pred > 5 else
+                       "Neutral" if _pred > -5 else "Sell" if _pred > -20 else "Strong Sell")
+            _sig_color = ("#FF4040" if _pred > 5 else "#4488FF" if _pred < -5 else "#FFA500")
+
+            col_rank, col_info, col_bar, col_stats, col_btn = st.columns([0.7, 2.5, 2, 2.5, 1])
+
+            with col_rank:
+                st.markdown(
+                    f"<div style='font-size:1.1rem;font-weight:800;color:#FFA500;"
+                    f"text-align:center;padding-top:14px;'>{_med}</div>",
+                    unsafe_allow_html=True
+                )
+
+            with col_info:
+                st.markdown(f"""
+                <div style='padding:10px 0;'>
+                    <div style='font-size:1rem;font-weight:700;color:#EAEAEA;'>{row['name']}</div>
+                    <div style='font-size:0.8rem;color:#8B9DB0;'>{row['ticker']} · {row['sector']}</div>
+                    <div style='font-size:0.85rem;color:{_1dcolor};margin-top:3px;'>
+                        {'▲' if _1d>=0 else '▼'} {abs(_1d):.2f}% 1D &nbsp;
+                        <span style='color:#8B9DB0;'>|</span>&nbsp;
+                        <span style='color:#EAEAEA;'>${row['price']:,.2f}</span>
+                    </div>
+                </div>""", unsafe_allow_html=True)
+
+            with col_bar:
+                st.markdown(f"""
+                <div style='padding:14px 0 0 0;'>
+                    <div style='background:#1A1F35;border-radius:4px;height:12px;
+                                overflow:hidden;margin-bottom:4px;'>
+                        <div style='width:{_bar_w}%;background:{_bar_col};height:100%;
+                                    border-radius:4px;'></div>
+                    </div>
+                    <div style='font-size:1.1rem;font-weight:800;color:{_pcolor};'>
+                        {'▲' if _pred>=0 else '▼'} {abs(_pred):.1f}%
+                    </div>
+                    <div style='font-size:0.72rem;color:#8B9DB0;'>
+                        {'12개월 예측 수익률' if _r_lang=='ko' else '12M predicted'}
+                    </div>
+                </div>""", unsafe_allow_html=True)
+
+            with col_stats:
+                st.markdown(f"""
+                <div style='padding:10px 0;font-size:0.78rem;color:#8B9DB0;line-height:1.8;'>
+                    <span style='color:#EAEAEA;'>3M 모멘텀:</span> <span style='color:{"#FF4040" if _mom>=0 else "#4488FF"};'>{_mom:+.1f}%</span><br>
+                    <span style='color:#EAEAEA;'>추세(연):</span> <span style='color:{"#FF4040" if _trend>=0 else "#4488FF"};'>{_trend:+.1f}%</span><br>
+                    <span style='color:#EAEAEA;'>변동성:</span> {_vol:.1f}%
+                </div>""", unsafe_allow_html=True)
+
+            with col_btn:
+                st.markdown("<div style='height:8px;'></div>", unsafe_allow_html=True)
+                if st.button(
+                    f"{'분석' if _r_lang=='ko' else 'Analyze'}",
+                    key=f"rank_go_{row['ticker']}",
+                    use_container_width=True,
+                    type="primary"
+                ):
+                    st.session_state.ticker = row["ticker"]
+                    st.session_state.show_ranker = False
+                    st.rerun()
+
+                st.markdown(
+                    f"<div style='text-align:center;margin-top:4px;'>"
+                    f"<span style='color:{_sig_color};font-size:0.7rem;font-weight:700;'>"
+                    f"{_sig}</span></div>",
+                    unsafe_allow_html=True
+                )
+
+            st.markdown("<hr style='border-color:#1E2130;margin:0;'>", unsafe_allow_html=True)
+
+        # Disclaimer
+        st.markdown(
+            f"<div style='color:#4A5568;font-size:0.72rem;margin-top:16px;text-align:center;'>"
+            f"{'⚠️ 본 예측은 통계 모델 기반이며 투자 조언이 아닙니다. 실제 수익률은 크게 다를 수 있습니다.'  if _r_lang=='ko' else '⚠️ Predictions are statistical estimates only, not investment advice. Actual returns may differ significantly.'}"
+            f"</div>",
+            unsafe_allow_html=True
+        )
+    else:
+        st.info("데이터 로딩 실패. 잠시 후 다시 시도해주세요." if lang=="ko" else "Failed to load data. Please try again.")
 
 if st.session_state.sidebar_view == "semi":
     lang_s = lang
