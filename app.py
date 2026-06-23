@@ -211,6 +211,10 @@ if "ticker" not in st.session_state:
     st.session_state.ticker = "^GSPC"
 if "last_news_update" not in st.session_state:
     st.session_state.last_news_update = None
+if "news_translated" not in st.session_state:
+    st.session_state.news_translated = False
+if "geo_translated" not in st.session_state:
+    st.session_state.geo_translated = False
 
 def T(key):
     return TEXTS[st.session_state.lang].get(key, key)
@@ -450,6 +454,102 @@ def resolve_ticker(query: str) -> str:
             return val
     return q.upper()
 
+# ─── TERM GLOSSARY (hover tooltips) ──────────────────────────────────────────
+GLOSSARY = {
+    # Technical Indicators
+    "RSI":       "RSI(상대강도지수): 0~100 숫자로 주가가 너무 많이 올랐는지(70 이상=과매수) 너무 많이 떨어졌는지(30 이하=과매도) 알려주는 지표",
+    "RSI (14)":  "RSI(14일): 최근 14일 기준으로 주가가 과열인지 침체인지 0~100으로 표시. 70↑ 과열, 30↓ 침체",
+    "MACD":      "MACD: 단기와 장기 평균 가격의 차이로 '지금 주가가 오르는 힘인지, 내리는 힘인지' 방향을 알려주는 지표",
+    "SMA50":     "SMA50(50일 이동평균): 최근 50거래일 평균 가격. 이 선 위에 있으면 단기 상승 추세",
+    "SMA200":    "SMA200(200일 이동평균): 최근 200거래일 평균 가격. 이 선 위에 있으면 장기 상승 추세. 황금선이라 불림",
+    "50일 이동평균": "최근 50거래일(약 2.5개월) 주가의 평균선. 단기 추세를 파악할 때 사용",
+    "200일 이동평균": "최근 200거래일(약 10개월) 주가의 평균선. 장기 추세 파악용. 이 선 위=강세, 아래=약세",
+    "볼린저밴드":  "볼린저밴드: 주가가 움직이는 정상적인 범위(위-중간-아래 3선). 상단선 근처=과열, 하단선 근처=과냉각",
+    "BB Upper":  "볼린저밴드 상단선: 주가가 여기 근처면 너무 많이 올라 조정 가능성 있음",
+    "BB Lower":  "볼린저밴드 하단선: 주가가 여기 근처면 너무 많이 떨어져 반등 가능성 있음",
+    "베타 (S&P 500 대비)": "베타: 시장 전체가 1% 움직일 때 이 주식이 얼마나 움직이는지. 1.5이면 시장보다 1.5배 더 크게 움직임(고위험·고수익)",
+    "Beta vs S&P 500": "Beta: When the market moves 1%, this stock moves by this amount. 1.5 = 50% more volatile than market",
+    "변동성 (연율화)": "변동성: 주가가 1년 동안 얼마나 들쭉날쭉 움직이는지를 %로 표시. 20% 이하=안정, 40% 이상=고위험",
+    "Volatility (Annualized)": "Annualized Volatility: How much the stock price swings up/down in a year. Under 20%=stable, over 40%=high risk",
+    "샤프 비율":   "샤프 비율: 위험을 감수한 것 대비 얼마나 많은 수익을 냈는지. 1 이상=좋음, 2 이상=매우 좋음",
+    "Sharpe Ratio": "Sharpe Ratio: Return earned per unit of risk. Above 1 = good, above 2 = excellent",
+    "P/E Ratio":   "P/E(주가수익비율): 주가가 1년 이익의 몇 배인지. 20이면 '지금 이익의 20년치를 주고 사는 것'. 낮을수록 저평가",
+    "주가수익비율(P/E)": "주가수익비율: 이 주식이 1년 벌어들이는 돈의 몇 배로 거래되는지. 낮으면 저렴, 높으면 비싼 편",
+    "시가총액":    "시가총액: 이 회사의 총 가치(주가 × 발행 주식 수). 클수록 대형주",
+    "Market Cap":  "Market Cap: Total value of all shares = share price × total shares. Larger = bigger company",
+    "거래량":      "거래량: 오늘 이 주식이 얼마나 많이 사고팔렸는지. 거래량이 갑자기 늘면 중요한 사건이 있다는 신호",
+    "Volume":      "Volume: Number of shares traded today. A sudden spike usually signals an important event",
+    "52주 최고가": "52주 최고가: 최근 1년 중 가장 높았던 주가. 현재가가 여기 근처면 역대 최고 수준",
+    "52주 최저가": "52주 최저가: 최근 1년 중 가장 낮았던 주가. 현재가가 여기 근처면 크게 하락한 상태",
+    "52-Week High": "Highest price in the past 52 weeks. Current price near here = near all-time recent high",
+    "52-Week Low":  "Lowest price in the past 52 weeks. Current price near here = significantly down from peak",
+    # Macro terms
+    "VIX":        "VIX(공포지수): 투자자들이 얼마나 두려워하는지를 나타내는 지수. 20 이하=안정, 30 이상=공포, 40 이상=극심한 공포",
+    "VIX (공포지수)": "공포지수(VIX): 미국 증시의 불안감 척도. 20 이하=안정, 30 이상=투자자 두려움, 40↑=극심한 패닉",
+    "WTI":        "WTI(서부텍사스원유): 미국 기준 원유 가격. 전 세계 에너지·물가·운송비용에 영향을 줌",
+    "원유 (WTI)":  "서부텍사스원유: 미국산 원유의 기준 가격. 오르면 물가 상승·에너지주 강세, 내리면 그 반대",
+    "WTI 원유":   "서부텍사스원유: 국제 원유 가격의 기준. 배럴당 가격으로 표시. 에너지·항공·운송 업종에 직접 영향",
+    "DXY":        "달러인덱스(DXY): 미국 달러가 다른 주요 통화들 대비 얼마나 강한지. 오르면 달러 강세=신흥국 압박, 내리면 달러 약세",
+    "달러 인덱스 (DXY)": "달러인덱스: 달러 가치를 유로·엔 등 6개 통화 대비 측정. 오르면 미국 수출 기업에 불리",
+    "USD Index (DXY)": "Dollar Index: Measures USD strength vs 6 major currencies. Rising = stronger dollar = headwind for US exporters",
+    "10Y Treasury": "10-Year Treasury Yield: The interest rate on US government 10-year bonds. Rising yield = higher borrowing costs = headwind for stocks",
+    "미국채 10년 수익률": "미국 10년 국채금리: 미국 정부가 10년짜리 국채를 발행할 때 지급하는 금리. 오르면 주식시장에 부담",
+    "10년 국채":   "미국 10년물 국채금리: 가장 중요한 기준금리. 오르면 대출비용↑, 주식 매력↓. 시장 전체의 나침반",
+    "Gold":        "Gold (금): 불확실성이 커질 때 안전자산으로 오르는 경향. 달러가 약해지거나 전쟁·위기 시 상승",
+    "금":          "안전자산 금: 전쟁·경제위기·달러 약세 시 가격이 오르는 대표적 안전자산",
+    "Bitcoin":     "비트코인: 세계 최대 암호화폐. 위험자산으로 분류되어 주식시장과 함께 움직이는 경향",
+    "비트코인":    "세계 최대 암호화폐. 발행량 2100만개로 제한. 디지털 금이라 불리며 인플레이션 헤지 수단으로도 활용",
+    # Prediction terms
+    "Bull Case":   "Bull Case(강세 시나리오): 모든 것이 잘 풀릴 때의 낙관적 주가 예측값",
+    "Base Case":   "Base Case(기본 시나리오): 현재 추세가 그대로 이어질 때의 주가 예측값",
+    "Bear Case":   "Bear Case(약세 시나리오): 악재가 터졌을 때의 비관적 주가 예측값",
+    "강세 시나리오": "모든 상황이 유리하게 흘러갈 경우(호실적·금리인하 등)의 낙관적 목표주가",
+    "기본 시나리오": "현재 추세가 그대로 유지될 경우의 주가 예측. 가장 가능성 높은 시나리오",
+    "약세 시나리오": "악재(경기침체·금리급등 등)가 발생할 경우의 비관적 예측 주가",
+    "IPO":         "IPO(기업공개): 회사가 처음으로 주식시장에 상장하여 일반인에게 주식을 파는 것",
+    "EPS":         "EPS(주당순이익): 회사가 주식 1주당 얼마를 벌었는지. 높을수록 회사 실적이 좋다는 의미",
+    "ETF":         "ETF(상장지수펀드): 여러 주식을 묶어 하나처럼 거래하는 상품. 분산투자 효과로 개별 주식보다 안전",
+    "CAGR":        "CAGR(연평균성장률): 매년 평균 몇 %씩 성장했는지. 복리로 계산한 성장 속도",
+    "시장 심리":   "시장 심리(Sentiment): 투자자들이 지금 낙관적인지(강세) 비관적인지(약세) 나타내는 분위기 지표",
+    "Market Sentiment": "Sentiment: Whether investors feel optimistic (bullish) or pessimistic (bearish) about the market",
+    "HBM":         "HBM(고대역폭메모리): AI 서버·GPU에 들어가는 초고속 메모리. 엔비디아 AI칩 핵심 부품. SK하이닉스·삼성이 주요 공급",
+    "EUV":         "EUV(극자외선 노광): 머리카락 1/10000 굵기의 초미세 반도체 회로를 그리는 ASML만의 기술. 이 장비 없이 최첨단 칩 불가",
+    "GPU":         "GPU(그래픽처리장치): 원래 게임 그래픽용이었으나 AI 학습에 필수적인 연산 칩. 엔비디아가 세계 1위",
+    "DRAM":        "DRAM(디램): 컴퓨터/스마트폰의 임시 기억장치(RAM). 전원 끄면 지워짐. 삼성·SK하이닉스·마이크론이 세계 3대 제조사",
+    "NAND":        "NAND 플래시: SSD·USB·스마트폰에 쓰이는 저장 장치. 전원 꺼도 데이터 유지",
+    "LFP":         "LFP(인산철 배터리): 전기차에 쓰이는 배터리. 코발트 없어 저렴하고 안전하지만 에너지 밀도가 낮음. 테슬라·BYD 사용",
+    "GLP-1":       "GLP-1(비만치료제): 오젬픽·위고비 등 식욕 억제 당뇨·비만 치료제. 일라이릴리·노보노디스크의 핵심 의약품",
+    "SMR":         "SMR(소형모듈원자로): 기존 원자력보다 작고 경제적인 차세대 원전. AI 데이터센터 전력 공급원으로 주목",
+    "OSAT":        "OSAT(반도체 후공정): 완성된 칩을 포장하고 테스트하는 공정. ASE·암코가 세계 1·2위",
+    "EDA":         "EDA(전자설계자동화): 반도체 설계에 쓰이는 소프트웨어 툴. 시놉시스·캐던스가 양분",
+    "CoWoS":       "CoWoS(칩 패키징 기술): 여러 칩을 하나처럼 붙이는 TSMC의 첨단 패키징. AI GPU 생산의 병목 구간",
+    "REIT":        "REIT(부동산투자신탁): 건물·토지 등에 투자하고 임대수익을 주주에게 나눠주는 펀드 형태의 주식",
+    "CRISPR":      "CRISPR(유전자가위): DNA를 정밀하게 잘라 편집하는 기술. 암·유전병 치료 혁명을 이끄는 바이오 기술",
+    "mRNA":        "mRNA(메신저RNA): 코로나 백신으로 유명해진 기술. 세포에게 특정 단백질 만드는 법을 알려줘 면역력 형성",
+    "SoC":         "SoC(시스템온칩): CPU·GPU·메모리 등 여러 기능을 칩 하나에 집약한 것. 스마트폰 두뇌 역할",
+    "LNG":         "LNG(액화천연가스): 천연가스를 -162도로 냉각해 액체로 만든 것. 선박으로 수출 가능해 전 세계 에너지 무역의 핵심",
+    "셰일가스":    "셰일가스: 암석층에 갇혀있는 천연가스. 미국이 수평 시추 기술로 세계 최대 생산국. 에너지 독립의 핵심",
+    "ESG":         "ESG(환경·사회·지배구조): 기업이 환경(E)·사회(S)·윤리경영(G)을 잘 하는지 평가하는 기준. 기관투자자의 투자 기준",
+    "MCU":         "MCU(마이크로컨트롤러): 가전제품·자동차·산업기기 내부에 들어가는 소형 두뇌 칩. TI·마이크로칩이 주요 생산",
+    "P/B Ratio":   "P/B(주가순자산비율): 주가를 회사의 순자산 대비 몇 배로 사는지. 1 미만이면 청산 가치보다 싸게 거래",
+    "ROE":         "ROE(자기자본이익률): 주주 돈으로 얼마를 벌었는지. 15% 이상이면 우수한 수익성",
+    "FCF":         "FCF(잉여현금흐름): 영업활동 후 실제로 남은 현금. 배당·자사주 매입에 쓰이는 진짜 이익",
+}
+
+def gl(term: str, display: str = None) -> str:
+    """Wrap a term with a hover tooltip using the glossary."""
+    explanation = GLOSSARY.get(term, GLOSSARY.get(display or "", ""))
+    label = display or term
+    if explanation:
+        # Escape quotes in explanation
+        safe_exp = explanation.replace('"', '&quot;').replace("'", "&#39;")
+        return (
+            f'<span class="gl-term" title="{safe_exp}">'
+            f'{label}'
+            f'</span>'
+        )
+    return label
+
 # ─── S&P 500 + GLOBAL TICKERS ─────────────────────────────────────────────────
 SP500_POPULAR = {
     "Technology": [
@@ -513,6 +613,28 @@ MACRO_TICKERS = {
     "^TYX": "30Y Treasury",
     "BTC-USD": "Bitcoin",
 }
+
+# ─── TRANSLATION (Google Translate free API) ─────────────────────────────────
+@st.cache_data(ttl=3600)
+def translate_to_korean(text: str) -> str:
+    """Translate text to Korean using Google Translate free endpoint."""
+    if not text or not text.strip():
+        return text
+    try:
+        url = "https://translate.googleapis.com/translate_a/single"
+        params = {
+            "client": "gtx",
+            "sl": "auto",
+            "tl": "ko",
+            "dt": "t",
+            "q": text[:500],
+        }
+        resp = requests.get(url, params=params, timeout=5)
+        result = resp.json()
+        translated = "".join(part[0] for part in result[0] if part[0])
+        return translated
+    except Exception:
+        return text
 
 # ─── DATA FUNCTIONS ───────────────────────────────────────────────────────────
 @st.cache_data(ttl=300)
@@ -1135,6 +1257,20 @@ st.markdown("""
         font-size: 0.75rem;
         display: inline-block;
     }
+    .gl-term {
+        cursor: help;
+        border-bottom: 1px dotted #FFA500;
+        color: inherit;
+    }
+    .translate-btn {
+        background: #1E2130;
+        border: 1px solid #FFA500;
+        border-radius: 8px;
+        color: #FFA500;
+        padding: 4px 12px;
+        font-size: 0.8rem;
+        cursor: pointer;
+    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -1261,12 +1397,12 @@ w52l = info.get("fiftyTwoWeekLow", 0)
 
 mcol1, mcol2, mcol3, mcol4, mcol5, mcol6 = st.columns(6)
 metrics = [
-    (T("mkt_cap"), mkt_cap_str, ""),
-    (T("volume"), vol_str, ""),
-    (T("pe_ratio"), f"{pe:.1f}" if pe else "N/A", ""),
-    (T("week52_high"), f"${w52h:,.2f}" if w52h else "N/A", ""),
-    (T("week52_low"), f"${w52l:,.2f}" if w52l else "N/A", ""),
-    (T("volatility"), f"{df_2y['close'].pct_change().std() * np.sqrt(252) * 100:.1f}%" if 'close' in df_2y.columns else "N/A", ""),
+    (gl("Market Cap" if lang=="en" else "시가총액", T("mkt_cap")), mkt_cap_str, ""),
+    (gl("Volume" if lang=="en" else "거래량", T("volume")), vol_str, ""),
+    (gl("P/E Ratio" if lang=="en" else "주가수익비율(P/E)", T("pe_ratio")), f"{pe:.1f}" if pe else "N/A", ""),
+    (gl("52-Week High" if lang=="en" else "52주 최고가", T("week52_high")), f"${w52h:,.2f}" if w52h else "N/A", ""),
+    (gl("52-Week Low" if lang=="en" else "52주 최저가", T("week52_low")), f"${w52l:,.2f}" if w52l else "N/A", ""),
+    (gl("Volatility (Annualized)" if lang=="en" else "변동성 (연율화)", T("volatility")), f"{df_2y['close'].pct_change().std() * np.sqrt(252) * 100:.1f}%" if 'close' in df_2y.columns else "N/A", ""),
 ]
 for col, (label, val, change) in zip([mcol1, mcol2, mcol3, mcol4, mcol5, mcol6], metrics):
     col.markdown(f"""
@@ -1299,15 +1435,20 @@ with tabs[0]:
     # Technical indicators summary
     st.markdown(f"<div class='section-header'>{T('technical_indicators')}</div>", unsafe_allow_html=True)
     ti_cols = st.columns(5)
+    _rsi_label = gl("RSI (14)", T("rsi"))
+    _macd_label = gl("MACD", T("macd"))
+    _sma50_label = gl("SMA50", T("sma50"))
+    _sma200_label = gl("SMA200", T("sma200"))
+    _beta_label = gl("Beta vs S&P 500", T("beta"))
     ind_data = [
-        (T("rsi"), f"{df_2y['RSI'].iloc[-1]:.1f}" if "RSI" in df_2y.columns and not pd.isna(df_2y["RSI"].iloc[-1]) else "N/A",
+        (_rsi_label, f"{df_2y['RSI'].iloc[-1]:.1f}" if "RSI" in df_2y.columns and not pd.isna(df_2y["RSI"].iloc[-1]) else "N/A",
          "#FF4B4B" if "RSI" in df_2y.columns and not pd.isna(df_2y["RSI"].iloc[-1]) and df_2y["RSI"].iloc[-1] > 70
          else "#00D4AA" if "RSI" in df_2y.columns and not pd.isna(df_2y["RSI"].iloc[-1]) and df_2y["RSI"].iloc[-1] < 30
          else "#FFA500"),
-        (T("macd"), f"{df_2y['MACD'].iloc[-1]:.3f}" if "MACD" in df_2y.columns else "N/A", "#8B9DB0"),
-        (T("sma50"), f"${df_2y['SMA50'].iloc[-1]:,.2f}" if "SMA50" in df_2y.columns and not pd.isna(df_2y["SMA50"].iloc[-1]) else "N/A", "#FFD700"),
-        (T("sma200"), f"${df_2y['SMA200'].iloc[-1]:,.2f}" if "SMA200" in df_2y.columns and not pd.isna(df_2y["SMA200"].iloc[-1]) else "N/A", "#FF8C00"),
-        (T("beta"), f"{info.get('beta', 'N/A')}", "#AB63FA"),
+        (_macd_label, f"{df_2y['MACD'].iloc[-1]:.3f}" if "MACD" in df_2y.columns else "N/A", "#8B9DB0"),
+        (_sma50_label, f"${df_2y['SMA50'].iloc[-1]:,.2f}" if "SMA50" in df_2y.columns and not pd.isna(df_2y["SMA50"].iloc[-1]) else "N/A", "#FFD700"),
+        (_sma200_label, f"${df_2y['SMA200'].iloc[-1]:,.2f}" if "SMA200" in df_2y.columns and not pd.isna(df_2y["SMA200"].iloc[-1]) else "N/A", "#FF8C00"),
+        (_beta_label, f"{info.get('beta', 'N/A')}", "#AB63FA"),
     ]
     for col, (label, val, color) in zip(ti_cols, ind_data):
         col.markdown(f"""
@@ -1371,11 +1512,11 @@ with tabs[1]:
                     <div class='pred-price'>${p['base']:,.2f}</div>
                     <div style='color:{chg_color};font-size:1rem;font-weight:600;'>{chg_arrow} {abs(chg):.1f}%</div>
                     <div style='margin-top:10px;padding-top:10px;border-top:1px solid #2E3250;'>
-                        <div style='color:#00D4AA;font-size:0.8rem;'>▲ {T("pred_bull")}: ${p['bull']:,.2f}</div>
-                        <div style='color:#FF4B4B;font-size:0.8rem;'>▼ {T("pred_bear")}: ${p['bear']:,.2f}</div>
+                        <div style='color:#00D4AA;font-size:0.8rem;'>▲ {gl("Bull Case", T("pred_bull"))}: ${p['bull']:,.2f}</div>
+                        <div style='color:#FF4B4B;font-size:0.8rem;'>▼ {gl("Bear Case", T("pred_bear"))}: ${p['bear']:,.2f}</div>
                     </div>
                     <div style='margin-top:8px;color:#8B9DB0;font-size:0.75rem;'>
-                        {T("volatility")}: {p['vol_annual']:.1f}%
+                        {gl("Volatility (Annualized)", T("volatility"))}: {p['vol_annual']:.1f}%
                     </div>
                 </div>
                 """, unsafe_allow_html=True)
@@ -1404,9 +1545,14 @@ with tabs[1]:
 
 # ══════════════════ TAB 3: NEWS ══════════════════
 with tabs[2]:
-    col_title, col_update = st.columns([3, 1])
+    col_title, col_trans, col_update = st.columns([3, 1, 1])
     with col_title:
         st.markdown(f"<div class='section-header'>{T('news_title')}</div>", unsafe_allow_html=True)
+    with col_trans:
+        trans_label = ("🌐 영어로 보기" if st.session_state.news_translated else "🌐 한글 번역") if lang == "ko" else ("🌐 Show English" if st.session_state.news_translated else "🌐 한글 번역")
+        if st.button(trans_label, use_container_width=True):
+            st.session_state.news_translated = not st.session_state.news_translated
+            st.rerun()
     with col_update:
         if st.button("🔄 " + ("새로고침" if lang == "ko" else "Refresh"), use_container_width=True):
             st.cache_data.clear()
@@ -1414,6 +1560,8 @@ with tabs[2]:
 
     now_str = datetime.now().strftime("%Y-%m-%d %H:%M")
     st.markdown(f"<span class='update-badge'>🟢 {T('last_updated')}: {now_str} UTC</span>", unsafe_allow_html=True)
+    if st.session_state.news_translated:
+        st.markdown("<span class='update-badge' style='background:#1E3A5F;color:#64B5F6;margin-left:8px;'>🌐 한글 번역 중</span>", unsafe_allow_html=True)
     st.markdown("<br>", unsafe_allow_html=True)
 
     with st.spinner(T("news_loading")):
@@ -1448,11 +1596,17 @@ with tabs[2]:
             cols = st.columns(n_cols)
             for col, art in zip(cols, row_arts):
                 with col:
+                    title_text = art["title"]
+                    summary_text = art["summary"]
+                    if st.session_state.news_translated:
+                        with st.spinner("번역 중..."):
+                            title_text = translate_to_korean(title_text)
+                            summary_text = translate_to_korean(summary_text)
                     st.markdown(f"""
                     <div class='news-card'>
-                        <div class='news-title'><a href='{art['link']}' target='_blank' style='color:#EAEAEA;text-decoration:none;'>{art['title']}</a></div>
+                        <div class='news-title'><a href='{art['link']}' target='_blank' style='color:#EAEAEA;text-decoration:none;'>{title_text}</a></div>
                         <div class='news-meta'>📡 {art['source']} &nbsp;|&nbsp; 🕐 {art['published'][:20] if art['published'] else 'N/A'}</div>
-                        <div class='news-summary'>{art['summary']}</div>
+                        <div class='news-summary'>{summary_text}</div>
                     </div>
                     """, unsafe_allow_html=True)
     else:
@@ -1460,16 +1614,23 @@ with tabs[2]:
 
 # ══════════════════ TAB 4: GEOPOLITICAL ══════════════════
 with tabs[3]:
-    st.markdown(f"<div class='section-header'>{T('geo_title')}</div>", unsafe_allow_html=True)
+    _geo_hdr_col, _geo_btn_col = st.columns([4, 1])
+    with _geo_hdr_col:
+        st.markdown(f"<div class='section-header'>{T('geo_title')}</div>", unsafe_allow_html=True)
+    with _geo_btn_col:
+        _geo_btn_label = ("🌐 영어로 보기" if st.session_state.geo_translated else "🌐 한글 번역") if lang == "en" else ("🌐 영어로 보기" if st.session_state.geo_translated else "🌐 한글 번역")
+        if st.button(_geo_btn_label, key="geo_trans_btn", use_container_width=True):
+            st.session_state.geo_translated = not st.session_state.geo_translated
+            st.rerun()
 
     # Current macro metrics
     gcol1, gcol2, gcol3, gcol4, gcol5 = st.columns(5)
     macro_display = [
-        (T("geo_vix"), "VIX", "#FF4B4B"),
-        (T("geo_oil"), "Oil (WTI)", "#FFA500"),
-        (T("geo_gold"), "Gold", "#FFD700"),
-        (T("geo_dxy"), "USD Index", "#64B5F6"),
-        (T("geo_bonds"), "10Y Treasury", "#AB63FA"),
+        (gl("VIX (공포지수)" if lang == "ko" else "VIX", T("geo_vix")), "VIX", "#FF4B4B"),
+        (gl("WTI 원유" if lang == "ko" else "WTI", T("geo_oil")), "Oil (WTI)", "#FFA500"),
+        (gl("금" if lang == "ko" else "Gold", T("geo_gold")), "Gold", "#FFD700"),
+        (gl("달러 인덱스 (DXY)" if lang == "ko" else "USD Index (DXY)", T("geo_dxy")), "USD Index", "#64B5F6"),
+        (gl("미국채 10년 수익률" if lang == "ko" else "10Y Treasury", T("geo_bonds")), "10Y Treasury", "#AB63FA"),
     ]
     for col, (label, key, color) in zip([gcol1, gcol2, gcol3, gcol4, gcol5], macro_display):
         data = macro_data.get(key, {})
@@ -1506,7 +1667,11 @@ with tabs[3]:
         ("📉 US National Debt", "MEDIUM", "$35T+ debt, fiscal deficit → Long-term rate upward pressure", "med_risk"),
     ]
 
-    risk_factors = risk_factors_ko if lang == "ko" else risk_factors_en
+    if st.session_state.geo_translated:
+        # When translated: always show Korean
+        risk_factors = risk_factors_ko
+    else:
+        risk_factors = risk_factors_ko if lang == "ko" else risk_factors_en
     risk_labels = {
         "high_risk": (T("high_risk"), "risk-high"),
         "med_risk": (T("med_risk"), "risk-med"),
