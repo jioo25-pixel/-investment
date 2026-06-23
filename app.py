@@ -2786,6 +2786,26 @@ if _show_tabs:
         _sma50_label = gl("SMA50", T("sma50"))
         _sma200_label = gl("SMA200", T("sma200"))
         _beta_label = gl("Beta vs S&P 500", T("beta"))
+
+        # Tooltip descriptions (shown on hover via HTML title attribute)
+        _tooltips = {
+            _rsi_label:   ("RSI(상대강도지수): 0~100 사이 값. 70 이상이면 과매수(너무 오름), 30 이하면 과매도(너무 내림)를 의미합니다."
+                           if lang=="ko" else
+                           "RSI (Relative Strength Index): 0–100 scale. Above 70 = overbought, below 30 = oversold."),
+            _macd_label:  ("MACD: 단기·장기 이동평균의 차이. 양수면 단기 추세 강세, 음수면 단기 추세 약세를 나타냅니다."
+                           if lang=="ko" else
+                           "MACD: Difference between short and long moving averages. Positive = short-term uptrend, negative = downtrend."),
+            _sma50_label: ("SMA50(50일 이동평균): 최근 50거래일 평균 가격. 현재가가 이 선 위에 있으면 단기 상승 추세입니다."
+                           if lang=="ko" else
+                           "SMA50 (50-day Simple Moving Average): Average price over last 50 trading days. Price above = short-term uptrend."),
+            _sma200_label:("SMA200(200일 이동평균): 최근 200거래일 평균 가격. 현재가가 이 선 위에 있으면 장기 상승 추세(황금선)입니다."
+                           if lang=="ko" else
+                           "SMA200 (200-day Simple Moving Average): Average price over last 200 trading days. Price above = long-term uptrend (Golden Line)."),
+            _beta_label:  ("베타: S&P 500 대비 주가 민감도. 1보다 크면 시장보다 변동폭이 크고, 1보다 작으면 시장보다 안정적입니다."
+                           if lang=="ko" else
+                           "Beta: Sensitivity vs S&P 500. >1 = more volatile than market, <1 = more stable than market."),
+        }
+
         ind_data = [
             (_rsi_label, f"{df_2y['RSI'].iloc[-1]:.1f}" if "RSI" in df_2y.columns and not pd.isna(df_2y["RSI"].iloc[-1]) else "N/A",
              "#FF4B4B" if "RSI" in df_2y.columns and not pd.isna(df_2y["RSI"].iloc[-1]) and df_2y["RSI"].iloc[-1] > 70
@@ -2797,9 +2817,10 @@ if _show_tabs:
             (_beta_label, f"{info.get('beta', 'N/A')}", "#AB63FA"),
         ]
         for col, (label, val, color) in zip(ti_cols, ind_data):
+            _tip = _tooltips.get(label, "")
             col.markdown(f"""
             <div class='metric-card'>
-                <div class='metric-label'>{label}</div>
+                <div class='metric-label' title="{_tip}" style='cursor:help;'>{label} <span style='font-size:0.7rem;color:#4A5568;'>ⓘ</span></div>
                 <div style='font-size:1.1rem;font-weight:700;color:{color};'>{val}</div>
             </div>
             """, unsafe_allow_html=True)
