@@ -2776,17 +2776,27 @@ if st.session_state.home_mode and not st.session_state.show_ranker and st.sessio
                 unsafe_allow_html=True)
     with st.spinner("로딩 중..." if lang == "ko" else "Loading..."):
         _top10_data = fetch_top10_prices()
-    _t10_cols = st.columns(5)
+    _t10_r1 = st.columns(5)
+    _t10_r2 = st.columns(5)
     for _i, _row in enumerate(_top10_data):
         _cc = "#FF4040" if _row["chg"] >= 0 else "#4488FF"
         _ar = "▲" if _row["chg"] >= 0 else "▼"
-        with _t10_cols[_i % 5]:
-            if st.button(f"{_row['name']} ({_row['sym']})", key=f"home_t10_{_row['sym']}", use_container_width=True):
+        _col = (_t10_r1 if _i < 5 else _t10_r2)[_i % 5]
+        with _col:
+            st.markdown(f"""
+            <div style='background:#111528;border:1px solid #1E2140;border-radius:10px;
+                        padding:14px 10px;margin-bottom:6px;text-align:center;'>
+                <div style='font-size:0.82rem;font-weight:700;color:#EAEAEA;'>{_row['name']}</div>
+                <div style='font-size:0.7rem;color:#4A5568;margin-bottom:6px;'>{_row['sym']}</div>
+                <div style='font-size:1.1rem;font-weight:800;color:#FFFFFF;'>${_row['price']:,.2f}</div>
+                <div style='font-size:0.9rem;font-weight:700;color:{_cc};'>{_ar} {abs(_row['chg']):.2f}%</div>
+            </div>""", unsafe_allow_html=True)
+            if st.button("분석" if lang=="ko" else "Analyze",
+                         key=f"home_t10_{_row['sym']}", use_container_width=True):
                 st.session_state.ticker = _row["sym"]
                 st.session_state.home_mode = False
                 st.rerun()
-            st.markdown(f"<div style='margin-top:-12px;margin-bottom:10px;text-align:center;font-size:0.85rem;color:#EAEAEA;'><b>${_row['price']:,.2f}</b> <span style='color:{_cc};font-weight:700;'>{_ar}{abs(_row['chg']):.2f}%</span></div>", unsafe_allow_html=True)
-    st.markdown("<hr style='border-color:#1E2130;margin:20px 0;'>", unsafe_allow_html=True)
+    st.markdown("<hr style='border-color:#1E2130;margin:24px 0;'>", unsafe_allow_html=True)
     _news_hdr = "📰 오늘의 주요 이슈 & 주가 영향 분석" if lang == "ko" else "📰 Today's Key Issues & Market Impact"
     st.markdown(f"<div class='section-header' style='font-size:1.2rem;margin-bottom:12px;'>{_news_hdr}</div>", unsafe_allow_html=True)
     with st.spinner("뉴스 로딩 중..." if lang == "ko" else "Loading news..."):
@@ -2795,10 +2805,15 @@ if st.session_state.home_mode and not st.session_state.show_ranker and st.sessio
         for _art in _home_news[:10]:
             _title = _art.get("title", "")
             _src   = _art.get("source", "")
+            _pub   = (_art.get("published","") or "")[:10]
             _imp   = _issue_impact(_title, lang)
             _high  = is_high_impact(_title, _art.get("summary", ""))
             _badge = "<span style='background:#FF4040;color:#fff;border-radius:4px;padding:1px 6px;font-size:0.7rem;margin-right:6px;'>🔥 HOT</span>" if _high else ""
-            st.markdown(f"""<div style='background:#111528;border:1px solid #1E2140;border-radius:10px;padding:12px 16px;margin-bottom:10px;'><div style='font-size:0.9rem;font-weight:600;color:#EAEAEA;margin-bottom:6px;'>{_badge}{_title}</div><div style='font-size:0.78rem;color:#8B9DB0;margin-bottom:6px;'>{_src}</div><div style='font-size:0.82rem;color:#FFD700;border-top:1px solid #1E2140;padding-top:6px;'>{_imp}</div></div>""", unsafe_allow_html=True)
+            st.markdown(f"""<div style='background:#111528;border:1px solid #1E2140;border-radius:10px;padding:12px 16px;margin-bottom:10px;'>
+<div style='font-size:0.9rem;font-weight:600;color:#EAEAEA;margin-bottom:6px;'>{_badge}{_title}</div>
+<div style='font-size:0.75rem;color:#4A5568;margin-bottom:6px;'>{_src}{" · " + _pub if _pub else ""}</div>
+<div style='font-size:0.82rem;color:#FFD700;border-top:1px solid #1E2140;padding-top:6px;'>{_imp}</div>
+</div>""", unsafe_allow_html=True)
     else:
         st.info("뉴스를 불러오는 중입니다..." if lang == "ko" else "Loading news...")
 
@@ -6009,65 +6024,6 @@ if not st.session_state.home_mode and _show_tabs:
         st.markdown(f"<small style='color:#4A5568;'>{'⚠️ 모든 지표는 참고용입니다. yFinance 실시간 데이터 기반. 투자는 본인 책임입니다.' if lang_inv=='ko' else '⚠️ All metrics for reference only. Based on yFinance real-time data. Invest at your own risk.'}</small>", unsafe_allow_html=True)
 
 # ══════════════════ HOME DASHBOARD ══════════════════
-if st.session_state.home_mode and not st.session_state.get("show_ranker", False) and st.session_state.get("sidebar_view") is None:
-    _home_lang = st.session_state.lang
-    _home_hdr = "📈 시장 현황" if _home_lang == "ko" else "📈 Today's Market"
-    st.markdown(f"<div class='section-header'>{_home_hdr}</div>", unsafe_allow_html=True)
-
-    # Top 10 stock price cards in 5-column x 2-row layout
-    _top10_data = fetch_top10_prices()
-    _top10_cols_row1 = st.columns(5)
-    _top10_cols_row2 = st.columns(5)
-    for _idx, _stock in enumerate(_top10_data):
-        _sym = _stock["sym"]
-        _name = _stock["name"]
-        _price = _stock["price"]
-        _chg = _stock["chg"]
-        _chg_color = "#FF4040" if _chg >= 0 else "#4488FF"
-        _chg_arrow = "▲" if _chg >= 0 else "▼"
-        _btn_label = (
-            f"**{_name}** ({_sym})\n\n"
-            f"${_price:,.2f}  {_chg_arrow} {abs(_chg):.2f}%"
-        )
-        _col_row = _top10_cols_row1 if _idx < 5 else _top10_cols_row2
-        with _col_row[_idx % 5]:
-            if st.button(_btn_label, key=f"home_top10_{_sym}", use_container_width=True):
-                st.session_state.ticker = _sym
-                st.session_state.home_mode = False
-                st.rerun()
-
-    st.divider()
-
-    # News & impact analysis section
-    _news_hdr = "📰 오늘의 주요 이슈 & 주가 영향 분석" if _home_lang == "ko" else "📰 Today's Top Issues & Stock Impact Analysis"
-    st.markdown(f"<div class='section-header'>{_news_hdr}</div>", unsafe_allow_html=True)
-    _home_digest = fetch_market_digest()
-    _home_articles = _home_digest[:10]
-    if _home_articles:
-        for _art in _home_articles:
-            _impact_txt = _issue_impact(_art["title"], _home_lang)
-            _imp_badge = (
-                "<span style='color:#FF4040;font-size:0.65rem;font-weight:700;"
-                "border:1px solid #FF4040;border-radius:8px;padding:1px 5px;"
-                "margin-right:4px;'>HOT</span>"
-                if _art["impact"] else ""
-            )
-            _pub = _art["published"][:10] if _art["published"] else ""
-            _src = _art["source"]
-            st.markdown(
-                f"<div style='padding:8px 0;border-bottom:1px solid #1E2130;'>"
-                f"  {_imp_badge}"
-                f"  <a href='{_art['link']}' target='_blank' "
-                f"     style='color:#D0D8E8;font-size:0.82rem;text-decoration:none;"
-                f"             line-height:1.4;font-weight:600;'>{_art['title']}</a>"
-                f"  <div style='color:#FFA500;font-size:0.75rem;margin-top:3px;'>{_impact_txt}</div>"
-                f"  <div style='color:#4A5568;font-size:0.68rem;margin-top:2px;'>"
-                f"    {_src} · {_pub}</div>"
-                f"</div>",
-                unsafe_allow_html=True
-            )
-    else:
-        st.caption("뉴스 로딩 중..." if _home_lang == "ko" else "Loading news...")
 
 # ─── FOOTER ───────────────────────────────────────────────────────────────────
 st.markdown("<br><br>", unsafe_allow_html=True)
