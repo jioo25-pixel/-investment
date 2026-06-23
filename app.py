@@ -114,6 +114,7 @@ TEXTS = {
         "sharpe": "Sharpe Ratio",
         "beta": "Beta vs S&P 500",
         "summary_analysis": "2-Line Summary Analysis",
+        "tab_semi": "💾 Semiconductors",
     },
     "ko": {
         "title": "미국 증시 인텔리전스 시스템",
@@ -197,6 +198,7 @@ TEXTS = {
         "sharpe": "샤프 비율",
         "beta": "베타 (S&P 500 대비)",
         "summary_analysis": "2줄 요약 분석",
+        "tab_semi": "💾 반도체 생태계",
     },
 }
 
@@ -649,9 +651,29 @@ def build_price_chart(df: pd.DataFrame, ticker: str, lang: str) -> go.Figure:
         showlegend=True,
         legend=dict(orientation="h", y=1.02, x=0),
         xaxis_rangeslider_visible=False,
-        margin=dict(l=0, r=0, t=30, b=0),
+        margin=dict(l=0, r=0, t=50, b=0),
         plot_bgcolor="#0E1117",
         paper_bgcolor="#0E1117",
+        xaxis=dict(
+            rangeselector=dict(
+                buttons=[
+                    dict(count=1,  label="1D",  step="day",   stepmode="backward"),
+                    dict(count=1,  label="1M",  step="month", stepmode="backward"),
+                    dict(count=6,  label="6M",  step="month", stepmode="backward"),
+                    dict(count=1,  label="1Y",  step="year",  stepmode="backward"),
+                    dict(count=3,  label="3Y",  step="year",  stepmode="backward"),
+                    dict(count=5,  label="5Y",  step="year",  stepmode="backward"),
+                    dict(step="all", label="ALL"),
+                ],
+                bgcolor="#1E2130",
+                activecolor="#FFA500",
+                bordercolor="#3A4060",
+                borderwidth=1,
+                font=dict(color="#FFFFFF", size=12),
+                x=0, y=1.02,
+            ),
+            type="date",
+        ),
     )
     return fig
 
@@ -1006,7 +1028,7 @@ for col, (label, val, change) in zip([mcol1, mcol2, mcol3, mcol4, mcol5, mcol6],
     """, unsafe_allow_html=True)
 
 # ─── TABS ─────────────────────────────────────────────────────────────────────
-tabs = st.tabs([T("tab_overview"), T("tab_predict"), T("tab_news"), T("tab_geo"), T("tab_history"), T("tab_company"), T("tab_relations")])
+tabs = st.tabs([T("tab_overview"), T("tab_predict"), T("tab_news"), T("tab_geo"), T("tab_history"), T("tab_company"), T("tab_relations"), T("tab_semi")])
 
 # ══════════════════ TAB 1: OVERVIEW ══════════════════
 with tabs[0]:
@@ -1982,6 +2004,400 @@ with tabs[6]:
     else:
         st.info("📌 " + ("현재 AAPL·MSFT·NVDA·TSLA의 이해관계 데이터가 제공됩니다." if lang=="ko"
                           else "Relationship data available for AAPL, MSFT, NVDA, TSLA."))
+
+# ══════════════════ TAB 8: SEMICONDUCTOR ECOSYSTEM ══════════════════
+SEMI_UNIVERSE = {
+    "fabless_en": {
+        "label": "🧠 Fabless Chip Designers",
+        "desc": "Design chips but outsource fabrication to foundries",
+        "color": "#FFA500",
+        "companies": [
+            ("NVDA",  "NVIDIA",     "AI GPU / Data Center",        "USA",    4.5),
+            ("AMD",   "AMD",        "CPU / GPU / AI Chips",         "USA",    3.2),
+            ("QCOM",  "Qualcomm",   "Mobile SoC / 5G Modem",       "USA",    2.8),
+            ("AVGO",  "Broadcom",   "Networking / Wi-Fi Chips",     "USA",    3.8),
+            ("MRVL",  "Marvell",    "Data Center / 5G",            "USA",    1.2),
+            ("MCHP",  "Microchip",  "MCU / Analog",                "USA",    0.8),
+            ("SWKS",  "Skyworks",   "RF Chips for Mobile",         "USA",    0.7),
+            ("MPWR",  "Monolithic Power","Power Management",       "USA",    0.9),
+            ("AMAT",  "Applied Mat","(Equipment — see below)",     "USA",    None),
+            ("ARM",   "Arm Holdings","CPU Architecture Licensor",  "UK",     1.5),
+            ("MDIA",  "MediaTek",   "Mobile SoC (budget/mid)",     "Taiwan", 1.1),
+            ("BRCM",  "Broadcom",   "Networking ASIC",             "USA",    3.8),
+        ],
+    },
+    "idm_en": {
+        "label": "🏭 IDM (Integrated Device Manufacturers)",
+        "desc": "Design AND manufacture their own chips",
+        "color": "#00D4AA",
+        "companies": [
+            ("INTC",      "Intel",           "CPU / Data Center / Foundry", "USA",    1.8),
+            ("005930.KS", "Samsung",         "Logic / DRAM / NAND / Foundry","Korea",  4.5),
+            ("TXN",       "Texas Instruments","Analog / Embedded",          "USA",    1.6),
+            ("STM",       "STMicroelectronics","MCU / Power / Automotive",  "Europe", 0.7),
+            ("NXPI",      "NXP Semiconductors","Automotive / IoT",          "Netherlands",0.6),
+            ("ON",        "ON Semiconductor","Power / Automotive",          "USA",    0.5),
+            ("WOLF",      "Wolfspeed",       "Silicon Carbide (SiC) EV",    "USA",    0.2),
+        ],
+    },
+    "foundry_en": {
+        "label": "🔬 Pure-Play Foundries",
+        "desc": "Manufacture chips designed by others (contract fab)",
+        "color": "#AB63FA",
+        "companies": [
+            ("TSM",       "TSMC",            "World's #1 Foundry — 2nm/3nm/5nm", "Taiwan", 8.5),
+            ("GFS",       "GlobalFoundries", "Mature nodes, US/EU security supply", "USA", 0.9),
+            ("000660.KS", "SK Hynix",        "Memory + Foundry services",       "Korea", 1.2),
+            ("UMC",       "UMC",             "Mature node foundry",             "Taiwan", 0.4),
+            ("SMICY",     "SMIC",            "China's largest foundry (N+2 node)","China", 0.6),
+            ("VX",        "Semtech",         "Specialized analog foundry",      "USA",    0.2),
+        ],
+    },
+    "memory_en": {
+        "label": "💾 Memory Manufacturers",
+        "desc": "DRAM, NAND Flash, HBM production",
+        "color": "#64B5F6",
+        "companies": [
+            ("MU",        "Micron",          "DRAM / NAND / HBM — US memory giant", "USA",   0.9),
+            ("005930.KS", "Samsung Memory",  "World #1 DRAM + NAND + HBM3E",    "Korea",  4.5),
+            ("000660.KS", "SK Hynix",        "HBM3E leader for NVIDIA AI chips", "Korea",  1.2),
+            ("WDC",       "Western Digital", "NAND / SSD storage",              "USA",    0.5),
+            ("STX",       "Seagate",         "HDD + Enterprise storage",        "USA",    0.4),
+        ],
+    },
+    "equipment_en": {
+        "label": "⚙️ Semiconductor Equipment",
+        "desc": "Machines that make chips — critical chokepoint",
+        "color": "#FF6B6B",
+        "companies": [
+            ("ASML",  "ASML",              "EUV Lithography — sole global supplier", "Netherlands", 3.8),
+            ("AMAT",  "Applied Materials", "CVD/PVD/Etch/CMP tools",            "USA",  1.6),
+            ("LRCX",  "Lam Research",      "Etch & Deposition systems",          "USA",  1.1),
+            ("KLAC",  "KLA Corporation",   "Process Control & Inspection",       "USA",  0.9),
+            ("ONTO",  "Onto Innovation",   "Metrology & Inspection",             "USA",  0.2),
+            ("ACMR",  "ACM Research",      "Wafer Cleaning — China alt.",        "USA",  0.2),
+            ("TOELY", "Tokyo Electron",    "CVD / Etch / Coater systems",        "Japan",1.8),
+            ("HIMX",  "Himax",             "Display driver ICs",                 "Taiwan",0.1),
+            ("COHU",  "Cohu",              "Semiconductor test handlers",        "USA",  0.1),
+            ("FORM",  "FormFactor",        "Wafer probe cards",                  "USA",  0.1),
+            ("ENTG",  "Entegris",          "Materials delivery systems",         "USA",  0.3),
+            ("CCMP",  "CMC Materials",     "CMP slurries & pads",               "USA",  0.2),
+        ],
+    },
+    "materials_en": {
+        "label": "⛏️ Semiconductor Materials & Chemicals",
+        "desc": "Silicon wafers, gases, photoresist, specialty chemicals",
+        "color": "#FFD700",
+        "companies": [
+            ("SIEGY", "Shin-Etsu Chemical","#1 silicon wafer maker globally",   "Japan", 1.2),
+            ("SUMCF", "SUMCO",             "#2 silicon wafer maker",            "Japan", 0.3),
+            ("SOLV",  "Solvay",            "Ultra-pure chemicals for fabs",     "Belgium",0.2),
+            ("APD",   "Air Products",      "Ultra-pure gases (N2, H2, Ar, O2)", "USA",   0.6),
+            ("LIN",   "Linde",             "Specialty gases for semiconductor", "Ireland",1.8),
+            ("AZPN",  "AspenTech",         "Process optimization software",     "USA",   0.2),
+            ("CMC",   "CMC Materials",     "Polishing slurries (CMP)",          "USA",   0.2),
+            ("FSM",   "Ferroglobe",        "Silicon metal — solar/semi raw mat","Spain", 0.1),
+            ("TROX",  "Tronox",            "Titanium dioxide specialty chems",  "USA",   0.1),
+        ],
+    },
+    "packaging_en": {
+        "label": "📦 Advanced Packaging & Testing",
+        "desc": "OSAT, CoWoS, HBM stacking, chip-on-wafer",
+        "color": "#00BFA5",
+        "companies": [
+            ("ASX",   "ASE Technology",   "World's #1 OSAT packaging & test",  "Taiwan",0.5),
+            ("AMKR",  "Amkor Technology", "#2 OSAT — advanced packaging",       "USA",   0.3),
+            ("MX",    "Magnachip",        "Display driver, OLED IC",            "Korea", 0.1),
+            ("IMOS",  "ChipMOS",          "Memory test & packaging",            "Taiwan",0.1),
+            ("SPIL",  "SPIL",             "Siliconware Precision packaging",    "Taiwan",0.2),
+        ],
+    },
+    "eda_ip_en": {
+        "label": "🖥️ EDA Software & IP",
+        "desc": "Design tools and IP blocks that enable chip design",
+        "color": "#CE93D8",
+        "companies": [
+            ("SNPS",  "Synopsys",          "EDA tools + IP (acquired Ansys)",   "USA",   0.9),
+            ("CDNS",  "Cadence Design",    "EDA tools — PCB, IC, system sim",   "USA",   0.8),
+            ("MENT",  "Siemens EDA",       "Mentor Graphics — part of Siemens", "Germany",None),
+            ("ARM",   "Arm Holdings",      "CPU IP cores — licensed to all",    "UK",    1.5),
+            ("AMBA",  "Ambarella",         "Vision AI / SoC IP",                "USA",   0.2),
+            ("IMPV",  "Imperva",           "Security IP",                       "USA",   0.1),
+        ],
+    },
+}
+
+# Korean version (same tickers, translated labels)
+SEMI_UNIVERSE_KO = {
+    "fabless": {
+        "label": "🧠 팹리스 (설계 전문)",
+        "desc": "칩을 설계하되 생산은 파운드리에 외주",
+        "color": "#FFA500",
+    },
+    "idm": {
+        "label": "🏭 종합반도체기업 (IDM)",
+        "desc": "설계·생산을 모두 자체 수행",
+        "color": "#00D4AA",
+    },
+    "foundry": {
+        "label": "🔬 파운드리 (위탁생산)",
+        "desc": "다른 기업이 설계한 칩을 수탁 생산",
+        "color": "#AB63FA",
+    },
+    "memory": {
+        "label": "💾 메모리 반도체",
+        "desc": "DRAM, NAND 플래시, HBM 생산",
+        "color": "#64B5F6",
+    },
+    "equipment": {
+        "label": "⚙️ 반도체 장비",
+        "desc": "반도체 제조 장비 — 공급망의 핵심 병목",
+        "color": "#FF6B6B",
+    },
+    "materials": {
+        "label": "⛏️ 소재·화학·가스",
+        "desc": "실리콘 웨이퍼, 특수가스, 포토레지스트, 슬러리",
+        "color": "#FFD700",
+    },
+    "packaging": {
+        "label": "📦 패키징·테스트 (OSAT)",
+        "desc": "CoWoS, HBM 스태킹, 칩온웨이퍼 등 고급 패키징",
+        "color": "#00BFA5",
+    },
+    "eda_ip": {
+        "label": "🖥️ EDA 소프트웨어·IP",
+        "desc": "칩 설계를 가능하게 하는 툴 및 IP 블록",
+        "color": "#CE93D8",
+    },
+}
+
+SEMI_SUPPLY_CHAIN_KO = [
+    ("⛏️ 소재·가스", "SIEGY, SUMCF, APD, Linde\n실리콘 웨이퍼, 특수가스"),
+    ("⚙️ 장비", "ASML, AMAT, LRCX, KLAC, TEL\nEUV 노광·식각·증착 장비"),
+    ("🔬 파운드리", "TSMC, 삼성, GlobalFoundries\n웨이퍼 위탁 생산"),
+    ("🧠 설계 (팹리스)", "NVDA, AMD, Qualcomm, Broadcom\n칩 아키텍처 설계"),
+    ("📦 패키징·테스트", "ASE, Amkor\n최종 패키징·검수"),
+    ("🖥️ 완제품", "서버, PC, 스마트폰, 자동차\n최종 고객"),
+]
+
+SEMI_SUPPLY_CHAIN_EN = [
+    ("⛏️ Materials & Gases", "SIEGY, SUMCF, APD, Linde\nSilicon wafers, specialty gases"),
+    ("⚙️ Equipment", "ASML, AMAT, LRCX, KLAC, TEL\nEUV litho, etch, deposition tools"),
+    ("🔬 Foundry / Fab", "TSMC, Samsung, GlobalFoundries\nWafer contract manufacturing"),
+    ("🧠 Chip Design (Fabless)", "NVDA, AMD, Qualcomm, Broadcom\nChip architecture & design"),
+    ("📦 Packaging & Test", "ASE, Amkor\nFinal packaging & quality test"),
+    ("🖥️ End Products", "Servers, PCs, Smartphones, Autos\nEnd customers"),
+]
+
+@st.cache_data(ttl=600)
+def get_semi_prices(tickers: list) -> dict:
+    result = {}
+    for t in tickers:
+        try:
+            info_d = yf.Ticker(t).fast_info
+            price = getattr(info_d, "last_price", 0) or 0
+            prev  = getattr(info_d, "previous_close", price) or price
+            chg   = (price - prev) / prev * 100 if prev else 0
+            mktcap= getattr(info_d, "market_cap", 0) or 0
+            result[t] = {"price": price, "chg": chg, "mktcap": mktcap}
+        except Exception:
+            result[t] = {"price": 0, "chg": 0, "mktcap": 0}
+    return result
+
+with tabs[7]:
+    lang_s = lang
+    st.markdown(f"""
+    <div style='background:linear-gradient(135deg,#0D1B2A,#1A2744);border-radius:14px;
+                padding:18px 28px;margin-bottom:20px;border:1px solid #2E3250;'>
+        <div style='font-size:1.4rem;font-weight:800;color:#FFA500;'>
+            {'💾 반도체 생태계 완전 분석' if lang_s=='ko' else '💾 Semiconductor Ecosystem'}
+        </div>
+        <div style='color:#8B9DB0;font-size:0.85rem;margin-top:6px;'>
+            {'설계 → 소재 → 장비 → 파운드리 → 패키징까지 전체 밸류체인 커버'
+             if lang_s=='ko' else
+             'Full value chain: Design → Materials → Equipment → Foundry → Packaging'}
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
+
+    # ── Supply chain flow diagram ──
+    st.markdown(f"<div class='section-header'>{'반도체 공급망 흐름도' if lang_s=='ko' else 'Supply Chain Flow'}</div>",
+                unsafe_allow_html=True)
+    chain = SEMI_SUPPLY_CHAIN_KO if lang_s == "ko" else SEMI_SUPPLY_CHAIN_EN
+    chain_cols = st.columns(len(chain))
+    for idx, (step_title, step_desc) in enumerate(chain):
+        arrow = "→" if idx < len(chain) - 1 else ""
+        chain_cols[idx].markdown(f"""
+        <div style='background:#1A1F35;border:1px solid #3A4060;border-radius:10px;
+                    padding:12px 10px;text-align:center;min-height:100px;position:relative;'>
+            <div style='font-size:0.85rem;font-weight:700;color:#FFA500;'>{step_title}</div>
+            <div style='font-size:0.72rem;color:#B0BEC5;margin-top:6px;white-space:pre-line;line-height:1.5;'>{step_desc}</div>
+        </div>
+        """, unsafe_allow_html=True)
+
+    st.markdown("<br>", unsafe_allow_html=True)
+
+    # ── Category tabs ──
+    cat_keys = ["fabless_en","idm_en","foundry_en","memory_en","equipment_en","materials_en","packaging_en","eda_ip_en"]
+    cat_labels_ko = SEMI_UNIVERSE_KO
+    cat_label_map = {
+        "fabless_en":   (SEMI_UNIVERSE["fabless_en"]["label"],   SEMI_UNIVERSE_KO["fabless"]["label"]),
+        "idm_en":       (SEMI_UNIVERSE["idm_en"]["label"],       SEMI_UNIVERSE_KO["idm"]["label"]),
+        "foundry_en":   (SEMI_UNIVERSE["foundry_en"]["label"],   SEMI_UNIVERSE_KO["foundry"]["label"]),
+        "memory_en":    (SEMI_UNIVERSE["memory_en"]["label"],    SEMI_UNIVERSE_KO["memory"]["label"]),
+        "equipment_en": (SEMI_UNIVERSE["equipment_en"]["label"], SEMI_UNIVERSE_KO["equipment"]["label"]),
+        "materials_en": (SEMI_UNIVERSE["materials_en"]["label"], SEMI_UNIVERSE_KO["materials"]["label"]),
+        "packaging_en": (SEMI_UNIVERSE["packaging_en"]["label"], SEMI_UNIVERSE_KO["packaging"]["label"]),
+        "eda_ip_en":    (SEMI_UNIVERSE["eda_ip_en"]["label"],    SEMI_UNIVERSE_KO["eda_ip"]["label"]),
+    }
+    semi_tabs = st.tabs([v[1] if lang_s=="ko" else v[0] for v in cat_label_map.values()])
+
+    for tab_idx, (cat_key, semi_tab) in enumerate(zip(cat_keys, semi_tabs)):
+        with semi_tab:
+            cat_data = SEMI_UNIVERSE[cat_key]
+            color = cat_data["color"]
+            desc  = (list(SEMI_UNIVERSE_KO.values())[tab_idx]["desc"]
+                     if lang_s=="ko" else cat_data["desc"])
+
+            st.markdown(f"<div style='color:#8B9DB0;font-size:0.85rem;margin-bottom:14px;'>{desc}</div>",
+                        unsafe_allow_html=True)
+
+            # Fetch live prices for this category
+            tickers_in_cat = [c[0] for c in cat_data["companies"] if c[4] is not None]
+            with st.spinner("Loading prices..." if lang_s=="en" else "시세 로딩 중..."):
+                price_data = get_semi_prices(tickers_in_cat)
+
+            # Company cards grid
+            cols_per_row = 3
+            companies = cat_data["companies"]
+            for row_start in range(0, len(companies), cols_per_row):
+                row_companies = companies[row_start:row_start+cols_per_row]
+                row_cols = st.columns(cols_per_row)
+                for col_s, (t_sym, t_name, t_role, t_country, t_mktcap_ref) in zip(row_cols, row_companies):
+                    pd_live = price_data.get(t_sym, {})
+                    live_price = pd_live.get("price", 0)
+                    live_chg   = pd_live.get("chg", 0)
+                    chg_color  = "#00D4AA" if live_chg >= 0 else "#FF4B4B"
+                    chg_arrow  = "▲" if live_chg >= 0 else "▼"
+                    price_str  = f"${live_price:,.2f}" if live_price else "—"
+
+                    flag_map = {"USA":"🇺🇸","Korea":"🇰🇷","Taiwan":"🇹🇼","Japan":"🇯🇵",
+                                "Netherlands":"🇳🇱","UK":"🇬🇧","Germany":"🇩🇪",
+                                "Belgium":"🇧🇪","Ireland":"🇮🇪","China":"🇨🇳",
+                                "Spain":"🇪🇸","France":"🇫🇷","Europe":"🇪🇺"}
+                    flag = flag_map.get(t_country, "🌐")
+
+                    with col_s:
+                        clickable = st.button(
+                            f"{t_name} ({t_sym})",
+                            key=f"semi_{cat_key}_{t_sym}",
+                            use_container_width=True,
+                        )
+                        if clickable:
+                            st.session_state.ticker = t_sym
+                            st.rerun()
+                        st.markdown(f"""
+                        <div style='background:#1A1F35;border:1px solid {color}40;border-radius:10px;
+                                    padding:12px 14px;margin-bottom:12px;margin-top:-8px;'>
+                            <div style='display:flex;justify-content:space-between;align-items:center;'>
+                                <span style='color:{color};font-weight:700;font-size:0.85rem;'>{t_sym}</span>
+                                <span style='font-size:0.8rem;color:#8B9DB0;'>{flag} {t_country}</span>
+                            </div>
+                            <div style='color:#B0BEC5;font-size:0.78rem;margin:4px 0 8px 0;'>{t_role}</div>
+                            <div style='display:flex;justify-content:space-between;align-items:center;'>
+                                <span style='font-size:1rem;font-weight:700;color:#FFFFFF;'>{price_str}</span>
+                                <span style='color:{chg_color};font-size:0.85rem;font-weight:600;'>
+                                    {chg_arrow} {abs(live_chg):.2f}%
+                                </span>
+                            </div>
+                        </div>
+                        """, unsafe_allow_html=True)
+
+            # Market cap comparison chart for this category
+            valid_cos = [(c[0], c[1], c[4]) for c in companies if c[4] is not None]
+            if valid_cos:
+                st.markdown("<br>", unsafe_allow_html=True)
+                st.markdown(f"<div style='color:#8B9DB0;font-size:0.82rem;'>"
+                            f"{'시가총액 규모 비교 (조 달러 기준 추정치, 실시간 아님)' if lang_s=='ko' else 'Market Cap Reference (approx. $T — not real-time)'}"
+                            f"</div>", unsafe_allow_html=True)
+                names_c  = [c[1] for c in valid_cos]
+                mktcaps_c= [c[2] for c in valid_cos]
+                fig_semi = go.Figure(go.Bar(
+                    x=names_c, y=mktcaps_c,
+                    marker_color=color,
+                    text=[f"${v}T" for v in mktcaps_c],
+                    textposition="outside",
+                ))
+                fig_semi.update_layout(
+                    template="plotly_dark", height=280,
+                    margin=dict(l=0,r=0,t=20,b=0),
+                    yaxis_title="Market Cap (Approx. $T)" if lang_s=="en" else "시총 (추정, 조 달러)",
+                    plot_bgcolor="#0E1117", paper_bgcolor="#0E1117",
+                )
+                st.plotly_chart(fig_semi, use_container_width=True)
+
+    # ── ASML / TSMC spotlight ──
+    st.markdown("<br>", unsafe_allow_html=True)
+    st.markdown(f"<div class='section-header'>{'🔑 Key Chokepoints' if lang_s=='en' else '🔑 글로벌 핵심 병목 기업'}</div>",
+                unsafe_allow_html=True)
+    choke_en = [
+        ("ASML", "EUV Lithography", "🇳🇱", "#FF4B4B",
+         "Sole supplier of EUV machines globally. Without ASML, no sub-7nm chip can be made. "
+         "Each machine costs $150-380M. Export-controlled to China. "
+         "Key leverage point in US-China tech war."),
+        ("TSMC", "Leading-Edge Foundry", "🇹🇼", "#AB63FA",
+         "Manufactures chips for Apple, NVIDIA, AMD, Qualcomm, and more. "
+         "Controls ~90% of sub-5nm production globally. Taiwan geopolitical risk = "
+         "global semiconductor supply risk. Building fabs in Arizona, Japan, Germany."),
+        ("Samsung", "Memory + Foundry", "🇰🇷", "#00D4AA",
+         "World #1 in DRAM and NAND. Critical HBM supplier for NVIDIA AI chips. "
+         "Also competes with TSMC in advanced foundry (GAA 3nm). "
+         "Korea's dominant tech export — makes up ~20% of Korean GDP."),
+        ("SK Hynix", "HBM Leader", "🇰🇷", "#FFD700",
+         "Supplies HBM3E — the memory inside NVIDIA H200/B200 AI GPUs. "
+         "Without SK Hynix HBM, NVIDIA cannot build AI data center chips. "
+         "Capacity constrained through 2025-2026."),
+    ]
+    choke_ko = [
+        ("ASML", "EUV 리소그래피", "🇳🇱", "#FF4B4B",
+         "EUV 장비 세계 유일 공급업체. ASML 없이는 7nm 이하 칩 생산 불가. "
+         "장비 1대 가격 1500억~4000억원. 중국 수출 통제 대상. "
+         "미중 기술 전쟁의 핵심 레버리지 포인트."),
+        ("TSMC", "최첨단 파운드리", "🇹🇼", "#AB63FA",
+         "애플·엔비디아·AMD·퀄컴 등의 칩을 위탁 생산. "
+         "5nm 이하 글로벌 생산의 약 90% 장악. 대만 지정학 리스크 = "
+         "글로벌 반도체 공급 리스크. 미국·일본·독일에 팹 건설 중."),
+        ("삼성전자", "메모리 + 파운드리", "🇰🇷", "#00D4AA",
+         "DRAM·NAND 세계 1위. 엔비디아 AI 칩용 핵심 HBM 공급사. "
+         "GAA 3nm로 TSMC와 파운드리 경쟁 중. "
+         "한국 핵심 수출 기업 — 한국 GDP의 약 20% 차지."),
+        ("SK하이닉스", "HBM 리더", "🇰🇷", "#FFD700",
+         "엔비디아 H200/B200 AI GPU 내부의 HBM3E 공급. "
+         "SK하이닉스 HBM 없이는 엔비디아 AI 데이터센터 칩 생산 불가. "
+         "2025~2026년까지 생산 용량 제한 상태."),
+    ]
+    chokepoints = choke_ko if lang_s == "ko" else choke_en
+    cho_cols = st.columns(2)
+    for ci, (cp_name, cp_role, cp_flag, cp_color, cp_desc) in enumerate(chokepoints):
+        with cho_cols[ci % 2]:
+            st.markdown(f"""
+            <div style='background:linear-gradient(135deg,#1A1F35,#0F1527);
+                        border:2px solid {cp_color};border-radius:12px;
+                        padding:16px 18px;margin-bottom:14px;'>
+                <div style='display:flex;align-items:center;gap:10px;margin-bottom:10px;'>
+                    <span style='font-size:1.4rem;'>{cp_flag}</span>
+                    <span style='font-size:1.1rem;font-weight:800;color:{cp_color};'>{cp_name}</span>
+                    <span style='background:{cp_color}20;color:{cp_color};border-radius:8px;
+                                 padding:2px 8px;font-size:0.75rem;'>{cp_role}</span>
+                </div>
+                <div style='color:#B0BEC5;font-size:0.82rem;line-height:1.6;'>{cp_desc}</div>
+                <div style='margin-top:10px;'>
+                    {'<button onclick="void(0)" style="background:#1E2130;color:#FFFFFF;border:1px solid #3A4060;border-radius:6px;padding:4px 12px;cursor:pointer;font-size:0.78rem;">차트 보기 →</button>'
+                     if lang_s=="ko" else
+                     '<button style="background:#1E2130;color:#FFFFFF;border:1px solid #3A4060;border-radius:6px;padding:4px 12px;cursor:pointer;font-size:0.78rem;">View Chart →</button>'}
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
 
 # ─── FOOTER ───────────────────────────────────────────────────────────────────
 st.markdown("<br><br>", unsafe_allow_html=True)
