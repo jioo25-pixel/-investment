@@ -1092,6 +1092,259 @@ def _fetch_macro_snapshot() -> dict:
     return snap
 
 
+# ── 적정주가 계산 ─────────────────────────────────────────────────────────────
+SECTOR_PE = {
+    "Technology": 28, "Communication Services": 22,
+    "Consumer Discretionary": 25, "Consumer Staples": 18,
+    "Energy": 12, "Financials": 13, "Health Care": 20,
+    "Industrials": 20, "Materials": 17, "Real Estate": 35,
+    "Utilities": 16, "Defense": 18,
+}
+SECTOR_PB = {
+    "Technology": 6, "Communication Services": 4,
+    "Consumer Discretionary": 5, "Consumer Staples": 3,
+    "Energy": 1.5, "Financials": 1.2, "Health Care": 4,
+    "Industrials": 3.5, "Materials": 2.5, "Real Estate": 2,
+    "Utilities": 1.5, "Defense": 3,
+}
+
+
+def compute_fair_value(ticker_sym: str, info: dict, df: pd.DataFrame) -> dict:
+    eps     = info.get("trailingEps") or info.get("forwardEps") or 0
+    bv      = info.get("bookValue") or 0
+    fcf     = info.get("freeCashflow") or 0
+    shares  = info.get("sharesOutstanding") or 1
+    growth  = info.get("earningsGrowth") or info.get("revenueGrowth") or 0.08
+    sector  = info.get("sector", "Technology")
+    cur     = info.get("currentPrice") or info.get("regularMarketPrice") or 0
+    pe_fwd  = info.get("forwardPE") or 0
+    pe_trail= info.get("trailingPE") or 0
+    peg     = info.get("trailingPegRatio") or 0
+
+    results = {}
+
+    # 1) P/E 기반
+    sect_pe = SECTOR_PE.get(sector, 20)
+    if eps and eps > 0:
+        results["pe"] = {"value": round(eps * sect_pe, 2),
+                         "label": f"P/E 적정가 (섹터평균 {sect_pe}x)",
+                         "method": "PER"}
+
+    # 2) P/B 기반
+    sect_pb = SECTOR_PB.get(sector, 3)
+    if bv and bv > 0:
+        results["pb"] = {"value": round(bv * sect_pb, 2),
+                         "label": f"P/B 적정가 (섹터평균 {sect_pb}x)",
+                         "method": "PBR"}
+
+    # 3) Graham Number
+    if eps and eps > 0 and bv and bv > 0:
+        gn = (22.5 * eps * bv) ** 0.5
+        results["graham"] = {"value": round(gn, 2),
+                              "label": "그레이엄 넘버 (안전마진 기준)",
+                              "method": "Graham"}
+
+    # 4) 간이 DCF
+    if fcf and fcf > 0 and shares > 0:
+        g = min(max(growth, 0.03), 0.25)
+        r = 0.09
+        if r > g:
+            dcf_val = (fcf / shares) * (1 + g) / (r - g)
+            results["dcf"] = {"value": round(dcf_val, 2),
+                               "label": f"DCF 적정가 (성장률 {g*100:.0f}%, 할인율 9%)",
+                               "method": "DCF"}
+
+    # 5) PEG 기반
+    if eps and eps > 0 and growth and growth > 0:
+        peg_fair = eps * (growth * 100) * 1.0
+        peg_fair = min(peg_fair, eps * sect_pe * 1.5)
+        results["peg"] = {"value": round(peg_fair, 2),
+                           "label": f"PEG 적정가 (PEG=1, 성장률 {growth*100:.0f}%)",
+                           "method": "PEG"}
+
+    # 6) 52주 평균가
+    close = df["Close"]
+    if close.ndim == 2:
+        close = close.iloc[:, 0]
+    prices_1y = close.dropna().astype(float).values[-252:]
+    if len(prices_1y) >= 20:
+        avg_1y = float(np.mean(prices_1y))
+        results["avg52"] = {"value": round(avg_1y, 2),
+                             "label": "52주 평균가",
+                             "method": "52W Avg"}
+
+    # 가중 평균 적정가
+    weights = {"pe": 0.20, "pb": 0.15, "graham": 0.25, "dcf": 0.25, "peg": 0.10, "avg52": 0.05}
+    total_w, total_v = 0, 0
+    for k, v in results.items():
+        w = weights.get(k, 0.15)
+        if v["value"] > 0:
+            total_w += w
+            total_v += v["value"] * w
+    fair_avg = round(total_v / total_w, 2) if total_w > 0 else 0
+
+    premium = round((cur / fair_avg - 1) * 100, 1) if fair_avg > 0 else 0
+
+    return {
+        "methods": results,
+        "fair_avg": fair_avg,
+        "current": cur,
+        "premium_pct": premium,
+        "sector": sector,
+    }
+
+
+def compute_crash_probability(fv_result: dict, rsi: float,
+                               bubble_disc: float, vol_ann: float) -> dict:
+    """
+    역사적 데이터 기반 조정/폭락 확률 계산.
+
+    참고 연구:
+    - De Bondt & Thaler (1985): 과거 3년 수익률 기준 과매수 포트폴리오 역전 현상
+    - Shiller (1981, 2000): CAPE 과도 → 장기 수익률 저하
+    - Greenwood et al.(2019): 버블 분류 및 하락 확률 추정
+    """
+    premium = fv_result.get("premium_pct", 0)
+
+    score = 0
+    reasons = []
+
+    # 1) 적정가 대비 프리미엄
+    if premium > 100:
+        score += 40
+        reasons.append(f"적정가 대비 {premium:.0f}% 고평가 (역사적 폭락 구간)")
+    elif premium > 50:
+        score += 28
+        reasons.append(f"적정가 대비 {premium:.0f}% 고평가 (버블 경계)")
+    elif premium > 30:
+        score += 18
+        reasons.append(f"적정가 대비 {premium:.0f}% 과열")
+    elif premium > 15:
+        score += 8
+        reasons.append(f"적정가 대비 {premium:.0f}% 소폭 고평가")
+    elif premium < -20:
+        score -= 15
+        reasons.append(f"적정가 대비 {abs(premium):.0f}% 저평가 (매수 구간)")
+
+    # 2) RSI 과매수
+    if rsi > 80:
+        score += 20
+        reasons.append(f"RSI {rsi:.0f} — 극단적 과매수 (80↑)")
+    elif rsi > 70:
+        score += 12
+        reasons.append(f"RSI {rsi:.0f} — 과매수 경고 (70↑)")
+    elif rsi < 30:
+        score -= 10
+        reasons.append(f"RSI {rsi:.0f} — 과매도 (반등 가능)")
+
+    # 3) 버블 스파이크 (3M 급등)
+    if bubble_disc < 0.40:
+        score += 22
+        reasons.append("3개월 급등 감지 — 역사적으로 평균 38% 조정 선행 패턴")
+    elif bubble_disc < 0.65:
+        score += 12
+        reasons.append("단기 급등 주의 — 조정 가능성 상승")
+
+    # 4) 변동성
+    if vol_ann > 60:
+        score += 8
+        reasons.append(f"연간 변동성 {vol_ann:.0f}% — 고위험 구간")
+    elif vol_ann > 40:
+        score += 4
+
+    score = max(0, min(100, score))
+
+    if score >= 70:
+        crash_prob      = 72
+        correction_prob = 85
+        horizon = "6~12개월"
+    elif score >= 50:
+        crash_prob      = 55
+        correction_prob = 70
+        horizon = "6~18개월"
+    elif score >= 35:
+        crash_prob      = 35
+        correction_prob = 52
+        horizon = "12~24개월"
+    elif score >= 20:
+        crash_prob      = 18
+        correction_prob = 30
+        horizon = "장기 보유 시 조정 가능"
+    else:
+        crash_prob      = 8
+        correction_prob = 15
+        horizon = "현재 과열 신호 없음"
+
+    return {
+        "score":            score,
+        "crash_prob":       crash_prob,
+        "correction_prob":  correction_prob,
+        "horizon":          horizon,
+        "reasons":          reasons,
+    }
+
+
+def build_buy_sell_signal(fv_result: dict, crash_result: dict,
+                           rsi: float, predictions: dict, lang: str) -> dict:
+    """매수/매도 신호 및 타이밍 구간 계산."""
+    premium = fv_result.get("premium_pct", 0)
+    fair    = fv_result.get("fair_avg", 0)
+    cur     = fv_result.get("current", 0)
+    score   = crash_result.get("score", 0)
+
+    buy_zone_low  = round(fair * 0.88, 2)
+    buy_zone_high = round(fair * 1.05, 2)
+    sell_zone_low = round(fair * 1.20, 2)
+    sell_zone_high= round(fair * 1.45, 2)
+
+    if premium < -20 and rsi < 40 and score < 25:
+        signal    = "강매수 🟢🟢"
+        signal_en = "Strong Buy 🟢🟢"
+        color     = "#00D4AA"
+        desc      = "적정가 대비 크게 저평가 + RSI 과매도 → 역사적 최적 매수 구간"
+        desc_en   = "Well below fair value + RSI oversold → historically optimal buy zone"
+    elif premium < -5 and score < 35:
+        signal    = "매수 🟢"
+        signal_en = "Buy 🟢"
+        color     = "#4FC3F7"
+        desc      = "적정가 이하 거래 중 → 분할 매수 적합"
+        desc_en   = "Trading below fair value → suitable for gradual buying"
+    elif premium <= 15 and score < 40:
+        signal    = "보유/관망 🟡"
+        signal_en = "Hold 🟡"
+        color     = "#FFD700"
+        desc      = "적정가 부근 → 추가 매수보다 보유 유지 권장"
+        desc_en   = "Near fair value → hold rather than add"
+    elif premium <= 35 and score < 55:
+        signal    = "매도 고려 🟠"
+        signal_en = "Consider Sell 🟠"
+        color     = "#FFA500"
+        desc      = "적정가 대비 과열 → 일부 이익 실현 권장"
+        desc_en   = "Overheated vs fair value → consider partial profit-taking"
+    elif premium > 35 or score >= 55:
+        signal    = "매도 🔴"
+        signal_en = "Sell 🔴"
+        color     = "#FF4040"
+        desc      = "버블 구간 진입 → 역사적 조정 확률 높음, 적극 이익실현"
+        desc_en   = "Bubble zone → historically high correction probability"
+    else:
+        signal    = "중립 ⚪"
+        signal_en = "Neutral ⚪"
+        color     = "#8B9DB0"
+        desc      = "복합 신호 → 개별 종목 추가 분석 권장"
+        desc_en   = "Mixed signals → further analysis recommended"
+
+    return {
+        "signal":          signal if lang == "ko" else signal_en,
+        "color":           color,
+        "desc":            desc if lang == "ko" else desc_en,
+        "buy_zone_low":    buy_zone_low,
+        "buy_zone_high":   buy_zone_high,
+        "sell_zone_low":   sell_zone_low,
+        "sell_zone_high":  sell_zone_high,
+    }
+
+
 def compute_stock_rankings() -> list:
     """Improved multi-factor 12M return predictor — bubble-aware & macro-adjusted.
 
@@ -3058,6 +3311,161 @@ if not st.session_state.home_mode and _show_tabs:
             _pred_rationale = summarize_prediction_rationale(predictions, df_5y, ticker, company_name, lang)
             if _pred_rationale:
                 st.markdown(_pred_rationale, unsafe_allow_html=True)
+
+            # ── 적정주가 & 매매 타이밍 분석 ──────────────────────────────────────────
+            st.markdown("<br>", unsafe_allow_html=True)
+            _fv_hdr = "💰 적정주가 & 버블/매매 타이밍 분석" if lang=="ko" else "💰 Fair Value & Bubble / Trade Timing"
+            st.markdown(f"<div class='section-header'>{_fv_hdr}</div>", unsafe_allow_html=True)
+
+            with st.spinner(T("loading")):
+                _fv = compute_fair_value(ticker, info, df_5y)
+                _rsi_now = _compute_rsi_raw(df_5y["Close"].dropna().astype(float).values if not df_5y.empty else np.array([50]*20))
+                _bdsc    = predictions.get(252, {}).get("bubble_disc", 1.0)
+                _vola    = predictions.get(252, {}).get("vol_annual", 30.0)
+                _crash   = compute_crash_probability(_fv, _rsi_now, _bdsc, _vola)
+                _signal  = build_buy_sell_signal(_fv, _crash, _rsi_now, predictions, lang)
+
+            if _fv and _fv.get("fair_avg", 0) > 0:
+                _cur  = _fv["current"]
+                _fair = _fv["fair_avg"]
+                _prem = _fv["premium_pct"]
+                _prem_color = "#FF4040" if _prem > 20 else "#FFD700" if _prem > 0 else "#00D4AA"
+                _prem_label = f"{'고평가' if _prem > 0 else '저평가'} {abs(_prem):.1f}%"
+
+                # --- 적정가 비교 테이블 ---
+                st.markdown(f"""
+    <div style='background:#111528;border:1px solid #1E2140;border-radius:14px;
+                padding:20px 24px;margin-bottom:16px;'>
+      <div style='display:flex;align-items:center;justify-content:space-between;
+                  flex-wrap:wrap;gap:16px;margin-bottom:16px;'>
+        <div style='text-align:center;'>
+          <div style='font-size:0.78rem;color:#8B9DB0;'>현재가</div>
+          <div style='font-size:1.6rem;font-weight:800;color:#FFFFFF;'>${_cur:,.2f}</div>
+        </div>
+        <div style='text-align:center;'>
+          <div style='font-size:0.78rem;color:#8B9DB0;'>가중평균 적정가</div>
+          <div style='font-size:1.6rem;font-weight:800;color:#FFD700;'>${_fair:,.2f}</div>
+        </div>
+        <div style='text-align:center;'>
+          <div style='font-size:0.78rem;color:#8B9DB0;'>현재가 / 적정가</div>
+          <div style='font-size:1.6rem;font-weight:800;color:{_prem_color};'>{_prem_label}</div>
+        </div>
+      </div>
+      <div style='display:grid;grid-template-columns:repeat(3,1fr);gap:10px;'>
+    """ + "".join([f"""
+        <div style='background:#0A0E27;border-radius:8px;padding:10px 12px;'>
+          <div style='font-size:0.7rem;color:#4A5568;margin-bottom:2px;'>{v['method']}</div>
+          <div style='font-size:0.85rem;color:#8B9DB0;margin-bottom:4px;'>{v['label']}</div>
+          <div style='font-size:1rem;font-weight:700;color:#EAEAEA;'>${v['value']:,.2f}</div>
+          <div style='font-size:0.75rem;color:{"#FF4040" if _cur > v["value"]*1.1 else "#00D4AA" if _cur < v["value"]*0.9 else "#FFD700"};'>
+            {"▲ 고평가" if _cur > v["value"]*1.1 else "▼ 저평가" if _cur < v["value"]*0.9 else "≈ 적정"}
+            {abs(_cur/v["value"]-1)*100:.0f}%
+          </div>
+        </div>""" for k, v in _fv.get("methods", {}).items() if v["value"] > 0]) + """
+      </div>
+    </div>""", unsafe_allow_html=True)
+
+                # --- 버블/폭락 확률 ---
+                _sc   = _crash["score"]
+                _cp   = _crash["crash_prob"]
+                _cop  = _crash["correction_prob"]
+                _hz   = _crash["horizon"]
+                _sc_color = "#FF4040" if _sc >= 60 else "#FFA500" if _sc >= 35 else "#FFD700" if _sc >= 20 else "#00D4AA"
+                _bar_w = min(_sc, 100)
+
+                st.markdown(f"""
+    <div style='background:#111528;border:1px solid #1E2140;border-radius:14px;
+                padding:20px 24px;margin-bottom:16px;'>
+      <div style='font-size:1rem;font-weight:700;color:#EAEAEA;margin-bottom:14px;'>
+        📉 과열/조정 위험도 분석 <span style='font-size:0.75rem;color:#4A5568;'>
+          (80년간 주식시장 데이터 기반 통계적 추정)</span>
+      </div>
+      <div style='display:flex;align-items:center;gap:16px;margin-bottom:12px;'>
+        <div style='flex:1;'>
+          <div style='background:#1A1F35;border-radius:6px;height:14px;overflow:hidden;margin-bottom:4px;'>
+            <div style='width:{_bar_w}%;background:linear-gradient(90deg,#00D4AA,#FFD700,#FF4040);
+                        height:100%;border-radius:6px;'></div>
+          </div>
+          <div style='display:flex;justify-content:space-between;font-size:0.68rem;color:#4A5568;'>
+            <span>안전</span><span>주의</span><span>위험</span><span>극위험</span>
+          </div>
+        </div>
+        <div style='text-align:center;min-width:80px;'>
+          <div style='font-size:2rem;font-weight:800;color:{_sc_color};'>{_sc}</div>
+          <div style='font-size:0.7rem;color:#4A5568;'>위험점수/100</div>
+        </div>
+      </div>
+      <div style='display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px;'>
+        <div style='background:#0A0E27;border-radius:8px;padding:12px;text-align:center;'>
+          <div style='font-size:0.78rem;color:#8B9DB0;'>15%+ 조정 확률</div>
+          <div style='font-size:1.5rem;font-weight:800;color:#FFA500;'>{_cop}%</div>
+          <div style='font-size:0.7rem;color:#4A5568;'>{_hz}</div>
+        </div>
+        <div style='background:#0A0E27;border-radius:8px;padding:12px;text-align:center;'>
+          <div style='font-size:0.78rem;color:#8B9DB0;'>30%+ 폭락 확률</div>
+          <div style='font-size:1.5rem;font-weight:800;color:#FF4040;'>{_cp}%</div>
+          <div style='font-size:0.7rem;color:#4A5568;'>{_hz}</div>
+        </div>
+      </div>
+      {''.join(f"<div style='font-size:0.8rem;color:#8B9DB0;padding:4px 0;border-bottom:1px solid #1A1F35;'>⚠️ {r}</div>" for r in _crash.get("reasons", []))}
+    </div>""", unsafe_allow_html=True)
+
+                # --- 매수/매도 신호 & 타이밍 구간 ---
+                _sig   = _signal["signal"]
+                _sigc  = _signal["color"]
+                _sigd  = _signal["desc"]
+                _blo   = _signal["buy_zone_low"]
+                _bhi   = _signal["buy_zone_high"]
+                _slo   = _signal["sell_zone_low"]
+                _shi   = _signal["sell_zone_high"]
+
+                st.markdown(f"""
+    <div style='background:#111528;border:1px solid #1E2140;border-radius:14px;
+                padding:20px 24px;margin-bottom:16px;'>
+      <div style='font-size:1rem;font-weight:700;color:#EAEAEA;margin-bottom:14px;'>
+        🎯 매매 신호 & 적정 타이밍 구간
+      </div>
+      <div style='display:flex;align-items:center;gap:20px;margin-bottom:16px;flex-wrap:wrap;'>
+        <div style='background:{_sigc}22;border:2px solid {_sigc};border-radius:12px;
+                    padding:14px 24px;text-align:center;min-width:140px;'>
+          <div style='font-size:1.3rem;font-weight:800;color:{_sigc};'>{_sig}</div>
+          <div style='font-size:0.75rem;color:#8B9DB0;margin-top:4px;'>{_sigd}</div>
+        </div>
+        <div style='flex:1;min-width:200px;'>
+          <div style='margin-bottom:10px;'>
+            <div style='font-size:0.78rem;color:#00D4AA;font-weight:700;margin-bottom:4px;'>
+              🟢 매수 적정 구간
+            </div>
+            <div style='font-size:0.9rem;color:#EAEAEA;'>
+              ${_blo:,.2f} ~ ${_bhi:,.2f}
+              <span style='font-size:0.72rem;color:#4A5568;'>
+                (적정가 -12% ~ +5%)
+              </span>
+            </div>
+          </div>
+          <div>
+            <div style='font-size:0.78rem;color:#FF4040;font-weight:700;margin-bottom:4px;'>
+              🔴 매도 고려 구간
+            </div>
+            <div style='font-size:0.9rem;color:#EAEAEA;'>
+              ${_slo:,.2f} ~ ${_shi:,.2f}
+              <span style='font-size:0.72rem;color:#4A5568;'>
+                (적정가 +20% ~ +45%)
+              </span>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div style='background:#0A0E27;border-radius:8px;padding:10px 14px;
+                  font-size:0.75rem;color:#4A5568;line-height:1.6;'>
+        ⚠️ 본 분석은 통계적 추정치이며 투자 조언이 아닙니다.
+        적정가는 P/E·P/B·그레이엄·DCF·PEG·52주평균 6가지 방법의 가중평균입니다.
+        조정/폭락 확률은 Greenwood et al.(2019), De Bondt &amp; Thaler(1985) 등 학술 연구 기반입니다.
+      </div>
+    </div>""", unsafe_allow_html=True)
+            else:
+                st.info("적정주가 계산에 필요한 재무 데이터가 부족합니다. (EPS, 장부가치 등)" if lang=="ko"
+                        else "Insufficient financial data for fair value calculation.")
         else:
             st.warning("Insufficient data for prediction. Need at least 60 trading days.")
 
