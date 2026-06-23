@@ -2782,34 +2782,8 @@ if not st.session_state.home_mode:
 
 # ══════════════════ HOME DASHBOARD ══════════════════
 if st.session_state.home_mode and not st.session_state.show_ranker and st.session_state.sidebar_view is None:
-    _hdr = "📈 시장 현황" if lang == "ko" else "📈 Today's Market"
-    st.markdown(f"<div class='section-header' style='font-size:1.4rem;margin-bottom:16px;'>{_hdr}</div>",
-                unsafe_allow_html=True)
-    with st.spinner("로딩 중..." if lang == "ko" else "Loading..."):
-        _top10_data = fetch_top10_prices()
-    _t10_r1 = st.columns(5)
-    _t10_r2 = st.columns(5)
-    for _i, _row in enumerate(_top10_data):
-        _cc = "#FF4040" if _row["chg"] >= 0 else "#4488FF"
-        _ar = "▲" if _row["chg"] >= 0 else "▼"
-        _col = (_t10_r1 if _i < 5 else _t10_r2)[_i % 5]
-        with _col:
-            st.markdown(f"""
-            <div style='background:#111528;border:1px solid #1E2140;border-radius:10px;
-                        padding:14px 10px;margin-bottom:6px;text-align:center;'>
-                <div style='font-size:0.82rem;font-weight:700;color:#EAEAEA;'>{_row['name']}</div>
-                <div style='font-size:0.7rem;color:#4A5568;margin-bottom:6px;'>{_row['sym']}</div>
-                <div style='font-size:1.1rem;font-weight:800;color:#FFFFFF;'>${_row['price']:,.2f}</div>
-                <div style='font-size:0.9rem;font-weight:700;color:{_cc};'>{_ar} {abs(_row['chg']):.2f}%</div>
-            </div>""", unsafe_allow_html=True)
-            if st.button("분석" if lang=="ko" else "Analyze",
-                         key=f"home_t10_{_row['sym']}", use_container_width=True):
-                st.session_state.ticker = _row["sym"]
-                st.session_state.home_mode = False
-                st.rerun()
-    st.markdown("<hr style='border-color:#1E2130;margin:24px 0;'>", unsafe_allow_html=True)
     _news_hdr = "📰 오늘의 주요 이슈 & 주가 영향 분석" if lang == "ko" else "📰 Today's Key Issues & Market Impact"
-    st.markdown(f"<div class='section-header' style='font-size:1.2rem;margin-bottom:12px;'>{_news_hdr}</div>", unsafe_allow_html=True)
+    st.markdown(f"<div class='section-header' style='font-size:1.4rem;margin-bottom:16px;'>{_news_hdr}</div>", unsafe_allow_html=True)
     with st.spinner("뉴스 로딩 중..." if lang == "ko" else "Loading news..."):
         _home_news = fetch_market_digest()
 
