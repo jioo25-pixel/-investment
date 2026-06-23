@@ -2037,6 +2037,10 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
+# ─── RESOLVE LANG & TICKER EARLY (used by sidebar and main content) ───────────
+ticker = st.session_state.ticker
+lang   = st.session_state.lang
+
 # ─── SIDEBAR ──────────────────────────────────────────────────────────────────
 with st.sidebar:
     # Language toggle
@@ -2178,8 +2182,6 @@ with st.sidebar:
                     st.rerun()
 
 # ─── MAIN CONTENT ─────────────────────────────────────────────────────────────
-ticker = st.session_state.ticker
-lang = st.session_state.lang
 
 # Title
 st.markdown(f"""
