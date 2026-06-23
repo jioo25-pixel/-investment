@@ -940,14 +940,18 @@ def fetch_market_digest() -> list:
                 pubdate = item.findtext("pubDate", "")[:25]
                 if not title:
                     continue
-                # Translate international articles to Korean
+                # For international articles: keep original, store Korean translation separately
                 if region == "intl":
-                    title = _translate_ko(title)
-                    if desc:
-                        desc = _translate_ko(desc)
+                    title_ko = _translate_ko(title)
+                    desc_ko  = _translate_ko(desc) if desc else ""
+                else:
+                    title_ko = title
+                    desc_ko  = desc
                 articles.append({
                     "title":     title,
+                    "title_ko":  title_ko,
                     "summary":   desc,
+                    "summary_ko": desc_ko,
                     "link":      link,
                     "published": pubdate,
                     "source":    src,
@@ -3032,29 +3036,39 @@ if st.session_state.home_mode and not st.session_state.show_ranker and st.sessio
             unsafe_allow_html=True
         )
         for _ni, _art in enumerate(articles):
-            _title = _art.get("title","")
-            _desc  = _art.get("summary","")
+            _title    = _art.get("title","")
+            _title_ko = _art.get("title_ko", _title)
+            _desc     = _art.get("summary","")
+            _desc_ko  = _art.get("summary_ko", _desc)
             _link  = _art.get("link","#")
             _src   = _art.get("source","")
             _pub   = (_art.get("published","") or "")[:10]
-            _imp   = _issue_impact(_title, "ko")   # 항상 한글로 영향 분석
+            _imp   = _issue_impact(_title, "ko")
             _high  = _art.get("impact", False)
             _enum  = _num_emojis[(_ni + emoji_offset) % 10]
             _hot   = ("<span style='background:#FF4040;color:#fff;border-radius:4px;"
                       "padding:1px 7px;font-size:0.68rem;font-weight:700;margin-left:6px;"
                       "vertical-align:middle;'>HOT</span>" if _high else "")
-            _desc_short = (_desc[:250] + "...") if len(_desc) > 250 else _desc
+            # 원문 표시, 한글 번역을 title 속성(hover tooltip)으로
+            _desc_short    = (_desc[:250]    + "...") if len(_desc)    > 250 else _desc
+            _desc_ko_short = (_desc_ko[:250] + "...") if len(_desc_ko) > 250 else _desc_ko
             _region_badge = ("<span style='color:#64B5F6;font-size:0.68rem;margin-right:4px;'>[해외]</span>"
                              if _art.get("region") == "intl" else "")
+            # Escape quotes in tooltip text
+            _title_ko_esc = _title_ko.replace('"', '&quot;').replace("'", "&#39;")
+            _desc_ko_esc  = _desc_ko_short.replace('"', '&quot;').replace("'", "&#39;")
+            _hint = " <span style='font-size:0.68rem;color:#4A5568;'>💬 마우스 올리면 한글 번역</span>" if _art.get("region") == "intl" else ""
             st.markdown(f"""
 <div style='background:#111528;border:1px solid #1E2140;border-radius:12px;
             padding:16px 18px;margin-bottom:12px;'>
-  <div style='font-size:1rem;font-weight:700;color:#EAEAEA;margin-bottom:8px;line-height:1.4;'>
-    {_enum} {_title}{_hot}
+  <div style='font-size:1rem;font-weight:700;color:#EAEAEA;margin-bottom:8px;line-height:1.4;
+              cursor:help;' title="{_title_ko_esc}">
+    {_enum} {_title}{_hot}{_hint}
   </div>
   <div style='font-size:0.83rem;color:#B0BEC5;line-height:1.7;margin-bottom:10px;
-              background:rgba(255,255,255,0.03);border-radius:6px;padding:8px 10px;'>
-    📝 <b style="color:#8B9DB0;">내용 요약:</b> {_desc_short if _desc_short else "본문 내용을 불러올 수 없습니다."}
+              background:rgba(255,255,255,0.03);border-radius:6px;padding:8px 10px;
+              cursor:help;' title="{_desc_ko_esc}">
+    📝 <b style="color:#8B9DB0;">Summary:</b> {_desc_short if _desc_short else "No summary available."}
   </div>
   <div style='font-size:0.83rem;color:#FFD700;background:rgba(255,215,0,0.07);
               border-radius:6px;padding:7px 10px;margin-bottom:10px;'>
