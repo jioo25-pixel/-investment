@@ -904,26 +904,60 @@ def _translate_ko(text: str) -> str:
     return text
 
 
-@st.cache_data(ttl=6*3600)
-def fetch_market_digest() -> list:
+def _impact_score(title: str, desc: str) -> int:
+    """Score 0-100 for how market-moving a headline is."""
+    t = (title + " " + desc).lower()
+    score = 0
+    # Tier-1: macro/policy (최고 중요도)
+    for kw in ["federal reserve","fed rate","fomc","rate hike","rate cut","interest rate",
+                "inflation","cpi","pce","gdp","recession","금리","기준금리","한국은행","연준",
+                "imf","world bank","g7","g20"]:
+        if kw in t: score += 18
+    # Tier-2: geopolitics / trade
+    for kw in ["tariff","trade war","sanction","china","russia","ukraine","middle east",
+                "nato","관세","무역전쟁","지정학","북한","대만"]:
+        if kw in t: score += 14
+    # Tier-3: major corp / earnings
+    for kw in ["earnings","revenue beat","eps","guidance","merger","acquisition","ipo",
+                "bankruptcy","layoff","실적","인수합병","파산","상장"]:
+        if kw in t: score += 12
+    # Tier-4: sector / tech
+    for kw in ["semiconductor","ai","nvidia","samsung","tsmc","apple","microsoft",
+                "반도체","인공지능","삼성","sk하이닉스"]:
+        if kw in t: score += 8
+    return min(score, 100)
+
+
+@st.cache_data(ttl=86400)          # 24h TTL — cache key includes date_key → resets at UTC midnight
+def fetch_market_digest(date_key: str = "") -> list:
     """
-    Fetch today's top market-moving headlines.
-    국내(Korean) sources kept as-is; 해외(International) titles & summaries
-    are auto-translated to Korean via Google Translate.
-    Returns items sorted: high-impact first.
+    Fetch today's highest-impact market headlines.
+    date_key (YYYY-MM-DD) causes daily cache reset at UTC midnight.
+    국내 sources displayed as-is; 해외 titles/summaries kept original
+    with Korean translation stored in title_ko / summary_ko (hover tooltip).
+    Returns up to 30 articles sorted by impact score descending.
     """
     _rss_intl = [
-        ("https://feeds.reuters.com/reuters/businessNews",            "Reuters",      "intl"),
-        ("https://www.cnbc.com/id/10001147/device/rss/rss.html",     "CNBC",         "intl"),
-        ("https://feeds.marketwatch.com/marketwatch/topstories/",     "MarketWatch",  "intl"),
-        ("https://finance.yahoo.com/news/rssindex",                   "Yahoo Finance","intl"),
-        ("https://rss.nytimes.com/services/xml/rss/nyt/Business.xml", "NYT Business", "intl"),
+        ("https://feeds.reuters.com/reuters/businessNews",                "Reuters",        "intl"),
+        ("https://feeds.reuters.com/reuters/worldNews",                   "Reuters World",  "intl"),
+        ("https://www.cnbc.com/id/10001147/device/rss/rss.html",         "CNBC",           "intl"),
+        ("https://www.cnbc.com/id/20910258/device/rss/rss.html",         "CNBC Economy",   "intl"),
+        ("https://feeds.marketwatch.com/marketwatch/topstories/",         "MarketWatch",    "intl"),
+        ("https://finance.yahoo.com/news/rssindex",                       "Yahoo Finance",  "intl"),
+        ("https://rss.nytimes.com/services/xml/rss/nyt/Business.xml",    "NYT Business",   "intl"),
+        ("https://feeds.bloomberg.com/markets/news.rss",                  "Bloomberg",      "intl"),
+        ("https://www.ft.com/rss/home/us",                                "Financial Times","intl"),
+        ("https://www.wsj.com/xml/rss/3_7085.xml",                        "WSJ Markets",    "intl"),
     ]
     _rss_ko = [
-        ("https://www.hankyung.com/feed/economy",          "한국경제",   "ko"),
-        ("https://www.mk.co.kr/rss/40300001/",             "매일경제",   "ko"),
-        ("https://rss.etnews.com/Section901.xml",          "전자신문",   "ko"),
-        ("https://rss.zdnet.co.kr/zdnet/rss/section/5/",  "ZDNet Korea","ko"),
+        ("https://www.hankyung.com/feed/economy",            "한국경제",   "ko"),
+        ("https://www.hankyung.com/feed/finance",             "한국경제증권","ko"),
+        ("https://www.mk.co.kr/rss/40300001/",               "매일경제",   "ko"),
+        ("https://www.mk.co.kr/rss/30200030/",               "매경증권",   "ko"),
+        ("https://rss.etnews.com/Section901.xml",            "전자신문",   "ko"),
+        ("https://rss.donga.com/economy.xml",                "동아경제",   "ko"),
+        ("https://rss.joins.com/joins_economy_list.xml",     "중앙경제",   "ko"),
+        ("https://rss.chosun.com/site/data/rss/rss.xml",    "조선경제",   "ko"),
     ]
     articles = []
     headers  = {"User-Agent": "Mozilla/5.0 (compatible; MarketIntel/1.0)"}
@@ -933,14 +967,15 @@ def fetch_market_digest() -> list:
             if resp.status_code != 200:
                 continue
             root = ET.fromstring(resp.content)
-            for item in root.findall(".//item")[:10]:
+            for item in root.findall(".//item")[:15]:
                 title   = re.sub(r"<[^>]+>", "", item.findtext("title",       "")).strip()
-                desc    = re.sub(r"<[^>]+>", "", item.findtext("description", ""))[:300].strip()
+                desc    = re.sub(r"<[^>]+>", "", item.findtext("description", ""))[:350].strip()
                 link    = item.findtext("link", "").strip()
                 pubdate = item.findtext("pubDate", "")[:25]
                 if not title:
                     continue
-                # For international articles: keep original, store Korean translation separately
+                score = _impact_score(title, desc)
+                # For international articles: keep original + translate for hover tooltip
                 if region == "intl":
                     title_ko = _translate_ko(title)
                     desc_ko  = _translate_ko(desc) if desc else ""
@@ -948,28 +983,31 @@ def fetch_market_digest() -> list:
                     title_ko = title
                     desc_ko  = desc
                 articles.append({
-                    "title":     title,
-                    "title_ko":  title_ko,
-                    "summary":   desc,
+                    "title":      title,
+                    "title_ko":   title_ko,
+                    "summary":    desc,
                     "summary_ko": desc_ko,
-                    "link":      link,
-                    "published": pubdate,
-                    "source":    src,
-                    "region":    region,
-                    "impact":    is_high_impact(title, desc),
+                    "link":       link,
+                    "published":  pubdate,
+                    "source":     src,
+                    "region":     region,
+                    "impact":     is_high_impact(title, desc),
+                    "score":      score,
                 })
         except Exception:
             continue
 
     seen, unique = set(), []
-    for art in articles:
+    for art in sorted(articles, key=lambda x: x["score"], reverse=True):
         key = art["title"][:60].lower()
         if key not in seen:
             seen.add(key)
             unique.append(art)
 
-    unique.sort(key=lambda x: (0 if x["impact"] else 1))
-    return unique[:30]
+    # Return top 15 per region, sorted by score
+    ko_arts   = [a for a in unique if a["region"] == "ko"][:15]
+    intl_arts = [a for a in unique if a["region"] != "ko"][:15]
+    return ko_arts + intl_arts
 
 
 _TOP10 = [
@@ -3021,72 +3059,94 @@ if not st.session_state.home_mode:
 
 # ══════════════════ HOME DASHBOARD ══════════════════
 if st.session_state.home_mode and not st.session_state.show_ranker and st.session_state.sidebar_view is None:
-    st.markdown("<div class='section-header' style='font-size:1.4rem;margin-bottom:16px;'>📰 오늘의 주요 이슈 & 주가 영향 분석</div>", unsafe_allow_html=True)
+    _today_key = datetime.utcnow().strftime("%Y-%m-%d")   # daily cache reset key
+    st.markdown(
+        f"<div class='section-header' style='font-size:1.4rem;margin-bottom:4px;'>"
+        f"📰 오늘의 주요 이슈 & 주가 영향 분석</div>"
+        f"<div style='font-size:0.75rem;color:#4A5568;margin-bottom:16px;'>"
+        f"📅 {_today_key} &nbsp;|&nbsp; 🔄 매일 자정(UTC) 자동 업데이트</div>",
+        unsafe_allow_html=True
+    )
     with st.spinner("뉴스 불러오는 중..."):
-        _home_news = fetch_market_digest()
+        _home_news = fetch_market_digest(date_key=_today_key)
 
     _num_emojis = ["1️⃣","2️⃣","3️⃣","4️⃣","5️⃣","6️⃣","7️⃣","8️⃣","9️⃣","🔟"]
 
-    def _render_news_section(articles, section_label, emoji_offset=0):
-        if not articles:
-            return
-        st.markdown(
-            f"<div style='font-size:1rem;font-weight:800;color:#8B9DB0;margin:16px 0 10px 0;"
-            f"letter-spacing:1px;'>{section_label}</div>",
-            unsafe_allow_html=True
-        )
-        for _ni, _art in enumerate(articles):
-            _title    = _art.get("title","")
-            _title_ko = _art.get("title_ko", _title)
-            _desc     = _art.get("summary","")
-            _desc_ko  = _art.get("summary_ko", _desc)
-            _link  = _art.get("link","#")
-            _src   = _art.get("source","")
-            _pub   = (_art.get("published","") or "")[:10]
-            _imp   = _issue_impact(_title, "ko")
-            _high  = _art.get("impact", False)
-            _enum  = _num_emojis[(_ni + emoji_offset) % 10]
-            _hot   = ("<span style='background:#FF4040;color:#fff;border-radius:4px;"
-                      "padding:1px 7px;font-size:0.68rem;font-weight:700;margin-left:6px;"
-                      "vertical-align:middle;'>HOT</span>" if _high else "")
-            # 원문 표시, 한글 번역을 title 속성(hover tooltip)으로
-            _desc_short    = (_desc[:250]    + "...") if len(_desc)    > 250 else _desc
-            _desc_ko_short = (_desc_ko[:250] + "...") if len(_desc_ko) > 250 else _desc_ko
-            _region_badge = ("<span style='color:#64B5F6;font-size:0.68rem;margin-right:4px;'>[해외]</span>"
-                             if _art.get("region") == "intl" else "")
-            # Escape quotes in tooltip text
-            _title_ko_esc = _title_ko.replace('"', '&quot;').replace("'", "&#39;")
-            _desc_ko_esc  = _desc_ko_short.replace('"', '&quot;').replace("'", "&#39;")
-            _hint = " <span style='font-size:0.68rem;color:#4A5568;'>💬 마우스 올리면 한글 번역</span>" if _art.get("region") == "intl" else ""
-            st.markdown(f"""
+    def _render_news_card(art, enum_str):
+        _title    = art.get("title","")
+        _title_ko = art.get("title_ko", _title)
+        _desc     = art.get("summary","")
+        _desc_ko  = art.get("summary_ko", _desc)
+        _link  = art.get("link","#")
+        _src   = art.get("source","")
+        _pub   = (art.get("published","") or "")[:10]
+        _imp   = _issue_impact(_title, "ko")
+        _high  = art.get("impact", False)
+        _score = art.get("score", 0)
+        _hot   = ("<span style='background:#FF4040;color:#fff;border-radius:4px;"
+                  "padding:1px 6px;font-size:0.65rem;font-weight:700;margin-left:5px;'>"
+                  "HOT</span>" if _high else "")
+        _score_bar = min(_score, 100)
+        _desc_short    = (_desc[:250]    + "...") if len(_desc)    > 250 else _desc
+        _desc_ko_short = (_desc_ko[:250] + "...") if len(_desc_ko) > 250 else _desc_ko
+        _title_ko_esc  = _title_ko.replace('"','&quot;').replace("'","&#39;")
+        _desc_ko_esc   = _desc_ko_short.replace('"','&quot;').replace("'","&#39;")
+        _is_intl = art.get("region") == "intl"
+        _hint = (" <span style='font-size:0.65rem;color:#4A5568;'>💬 hover → 한글</span>"
+                 if _is_intl else "")
+        st.markdown(f"""
 <div style='background:#111528;border:1px solid #1E2140;border-radius:12px;
-            padding:16px 18px;margin-bottom:12px;'>
-  <div style='font-size:1rem;font-weight:700;color:#EAEAEA;margin-bottom:8px;line-height:1.4;
-              cursor:help;' title="{_title_ko_esc}">
-    {_enum} {_title}{_hot}{_hint}
+            padding:14px 16px;margin-bottom:10px;'>
+  <div style='display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;'>
+    <span style='font-size:0.68rem;color:#4A5568;'>{_src}{" · "+_pub if _pub else ""}</span>
+    <span style='font-size:0.68rem;color:#FFA500;'>중요도 {_score_bar}</span>
   </div>
-  <div style='font-size:0.83rem;color:#B0BEC5;line-height:1.7;margin-bottom:10px;
-              background:rgba(255,255,255,0.03);border-radius:6px;padding:8px 10px;
+  <div style='font-size:0.92rem;font-weight:700;color:#EAEAEA;margin-bottom:8px;
+              line-height:1.4;cursor:help;' title="{_title_ko_esc}">
+    {enum_str} {_title}{_hot}{_hint}
+  </div>
+  <div style='font-size:0.8rem;color:#B0BEC5;line-height:1.65;margin-bottom:8px;
+              background:rgba(255,255,255,0.03);border-radius:6px;padding:7px 10px;
               cursor:help;' title="{_desc_ko_esc}">
-    📝 <b style="color:#8B9DB0;">Summary:</b> {_desc_short if _desc_short else "No summary available."}
+    {_desc_short if _desc_short else "<i style='color:#4A5568;'>요약 없음</i>"}
   </div>
-  <div style='font-size:0.83rem;color:#FFD700;background:rgba(255,215,0,0.07);
-              border-radius:6px;padding:7px 10px;margin-bottom:10px;'>
-    📌 <b>주가 영향:</b> {_imp}
+  <div style='font-size:0.78rem;color:#FFD700;background:rgba(255,215,0,0.07);
+              border-radius:6px;padding:6px 10px;margin-bottom:8px;'>
+    📌 {_imp}
   </div>
-  <div style='display:flex;align-items:center;justify-content:space-between;'>
-    <span style='font-size:0.72rem;color:#4A5568;'>{_region_badge}{_src}{" · " + _pub if _pub else ""}</span>
-    {"<a href='" + _link + "' target='_blank' style='font-size:0.78rem;color:#4FC3F7;text-decoration:none;font-weight:600;'>자세히 보기 👉</a>" if _link and _link != "#" else ""}
-  </div>
+  {"<a href='"+_link+"' target='_blank' style='font-size:0.75rem;color:#4FC3F7;text-decoration:none;font-weight:600;'>자세히 보기 👉</a>" if _link and _link != "#" else ""}
 </div>""", unsafe_allow_html=True)
 
     if _home_news:
-        _ko_news   = [a for a in _home_news if a.get("region") == "ko"][:8]
-        _intl_news = [a for a in _home_news if a.get("region") != "ko"][:8]
-        _render_news_section(_ko_news,   "🇰🇷 국내 주요 이슈", 0)
-        _render_news_section(_intl_news, "🌐 해외 주요 이슈", len(_ko_news))
+        _ko_news   = [a for a in _home_news if a.get("region") == "ko"]
+        _intl_news = [a for a in _home_news if a.get("region") != "ko"]
+        _col_ko, _col_intl = st.columns(2)
+        with _col_ko:
+            st.markdown(
+                "<div style='font-size:1rem;font-weight:800;color:#8B9DB0;"
+                "margin-bottom:12px;padding-bottom:6px;border-bottom:2px solid #1E2140;'>"
+                "🇰🇷 국내 주요 이슈</div>",
+                unsafe_allow_html=True
+            )
+            if _ko_news:
+                for _ni, _art in enumerate(_ko_news):
+                    _render_news_card(_art, _num_emojis[_ni % 10])
+            else:
+                st.caption("국내 뉴스를 불러오는 중...")
+        with _col_intl:
+            st.markdown(
+                "<div style='font-size:1rem;font-weight:800;color:#8B9DB0;"
+                "margin-bottom:12px;padding-bottom:6px;border-bottom:2px solid #1E2140;'>"
+                "🌐 해외 주요 이슈</div>",
+                unsafe_allow_html=True
+            )
+            if _intl_news:
+                for _ni, _art in enumerate(_intl_news):
+                    _render_news_card(_art, _num_emojis[_ni % 10])
+            else:
+                st.caption("해외 뉴스를 불러오는 중...")
     else:
-        st.info("뉴스를 불러오는 중입니다..." if lang == "ko" else "Loading news...")
+        st.info("뉴스를 불러오는 중입니다...")
 
 if not st.session_state.home_mode:
     # Company header
