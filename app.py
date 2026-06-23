@@ -1570,1250 +1570,1249 @@ from contextlib import nullcontext as _nctx
 _show_tabs = st.session_state.sidebar_view is None
 if _show_tabs:
     tabs = st.tabs([T("tab_overview"), T("tab_predict"), T("tab_news"), T("tab_geo"), T("tab_history"), T("tab_company"), T("tab_relations"), T("tab_invest")])
-else:
-    tabs = [_nctx()] * 8  # dummy context managers so "with tabs[N]:" doesn't error
 
 # ══════════════════ TAB 1: OVERVIEW ══════════════════
-with tabs[0]:
-    # Price chart period selector
-    period_map = {
-        T("hist_1y"): "1y", T("hist_3y"): "3y",
-        T("hist_5y"): "5y", T("hist_max"): "max",
-    }
-    period_choice = st.radio(
-        T("hist_period"), list(period_map.keys()),
-        horizontal=True, label_visibility="collapsed",
-    )
-    selected_period = period_map[period_choice]
-    df_chart = get_stock_data(ticker, selected_period)
-    df_chart = compute_indicators(df_chart)
+if _show_tabs:
+    with tabs[0]:
+        # Price chart period selector
+        period_map = {
+            T("hist_1y"): "1y", T("hist_3y"): "3y",
+            T("hist_5y"): "5y", T("hist_max"): "max",
+        }
+        period_choice = st.radio(
+            T("hist_period"), list(period_map.keys()),
+            horizontal=True, label_visibility="collapsed",
+        )
+        selected_period = period_map[period_choice]
+        df_chart = get_stock_data(ticker, selected_period)
+        df_chart = compute_indicators(df_chart)
 
-    st.plotly_chart(build_price_chart(df_chart, ticker, lang), use_container_width=True)
+        st.plotly_chart(build_price_chart(df_chart, ticker, lang), use_container_width=True)
 
-    # Technical indicators summary
-    st.markdown(f"<div class='section-header'>{T('technical_indicators')}</div>", unsafe_allow_html=True)
-    ti_cols = st.columns(5)
-    _rsi_label = gl("RSI (14)", T("rsi"))
-    _macd_label = gl("MACD", T("macd"))
-    _sma50_label = gl("SMA50", T("sma50"))
-    _sma200_label = gl("SMA200", T("sma200"))
-    _beta_label = gl("Beta vs S&P 500", T("beta"))
-    ind_data = [
-        (_rsi_label, f"{df_2y['RSI'].iloc[-1]:.1f}" if "RSI" in df_2y.columns and not pd.isna(df_2y["RSI"].iloc[-1]) else "N/A",
-         "#FF4B4B" if "RSI" in df_2y.columns and not pd.isna(df_2y["RSI"].iloc[-1]) and df_2y["RSI"].iloc[-1] > 70
-         else "#00D4AA" if "RSI" in df_2y.columns and not pd.isna(df_2y["RSI"].iloc[-1]) and df_2y["RSI"].iloc[-1] < 30
-         else "#FFA500"),
-        (_macd_label, f"{df_2y['MACD'].iloc[-1]:.3f}" if "MACD" in df_2y.columns else "N/A", "#8B9DB0"),
-        (_sma50_label, f"${df_2y['SMA50'].iloc[-1]:,.2f}" if "SMA50" in df_2y.columns and not pd.isna(df_2y["SMA50"].iloc[-1]) else "N/A", "#FFD700"),
-        (_sma200_label, f"${df_2y['SMA200'].iloc[-1]:,.2f}" if "SMA200" in df_2y.columns and not pd.isna(df_2y["SMA200"].iloc[-1]) else "N/A", "#FF8C00"),
-        (_beta_label, f"{info.get('beta', 'N/A')}", "#AB63FA"),
-    ]
-    for col, (label, val, color) in zip(ti_cols, ind_data):
-        col.markdown(f"""
-        <div class='metric-card'>
-            <div class='metric-label'>{label}</div>
-            <div style='font-size:1.1rem;font-weight:700;color:{color};'>{val}</div>
-        </div>
-        """, unsafe_allow_html=True)
-
-    # Sentiment gauge
-    sentiment = get_sentiment(df_2y)
-    sent_label = sentiment["label_ko"] if lang == "ko" else sentiment["label_en"]
-    sent_color = "#FF4040" if sent_label in ["Bullish", "강세"] else "#4488FF" if sent_label in ["Bearish", "약세"] else "#FFA500"
-
-    scol1, scol2 = st.columns([1, 2])
-    with scol1:
-        st.markdown(f"""
-        <div class='metric-card' style='padding:20px;'>
-            <div class='metric-label'>{T('sentiment')}</div>
-            <div style='font-size:2rem;font-weight:800;color:{sent_color};'>{sent_label}</div>
-            <div style='color:#8B9DB0;font-size:0.85rem;margin-top:4px;'>Score: {sentiment['score']:.0f}/100</div>
-        </div>
-        """, unsafe_allow_html=True)
-    with scol2:
-        # Company description
-        desc = info.get("longBusinessSummary", "")
-        if desc:
-            st.markdown(f"<div class='summary-box'>{desc[:400]}{'...' if len(desc)>400 else ''}</div>", unsafe_allow_html=True)
-
-    # Macro indicators
-    st.markdown(f"<div class='section-header'>{T('macro_indicators')}</div>", unsafe_allow_html=True)
-    st.plotly_chart(build_macro_chart(macro_data, lang), use_container_width=True)
-
-# ══════════════════ TAB 2: PREDICTION ══════════════════
-with tabs[1]:
-    st.markdown(f"<div class='section-header'>{T('pred_title')}</div>", unsafe_allow_html=True)
-    st.markdown(f"<small style='color:#8B9DB0;'>{T('forecast_disclaimer')}</small>", unsafe_allow_html=True)
-
-    horizons = [63, 126, 189, 252]  # trading days
-    horizon_labels = [T("pred_3m"), T("pred_6m"), T("pred_9m"), T("pred_12m")]
-
-    with st.spinner(T("loading")):
-        predictions = predict_prices(df_5y, horizons)
-
-    if predictions:
-        # Forecast chart
-        st.plotly_chart(build_forecast_chart(ticker, df_5y, predictions, lang), use_container_width=True)
-
-        # Prediction cards
-        st.markdown("<br>", unsafe_allow_html=True)
-        pred_cols = st.columns(4)
-        for col, h, label in zip(pred_cols, horizons, horizon_labels):
-            if h in predictions:
-                p = predictions[h]
-                chg = p["change_pct"]
-                chg_color = "#FF4040" if chg >= 0 else "#4488FF"
-                chg_arrow = "▲" if chg >= 0 else "▼"
-                col.markdown(f"""
-                <div class='prediction-card'>
-                    <div class='pred-horizon'>{label}</div>
-                    <div class='pred-price'>${p['base']:,.2f}</div>
-                    <div style='color:{chg_color};font-size:1rem;font-weight:600;'>{chg_arrow} {abs(chg):.1f}%</div>
-                    <div style='margin-top:10px;padding-top:10px;border-top:1px solid #2E3250;'>
-                        <div style='color:#FF4040;font-size:0.8rem;'>▲ {gl("Bull Case", T("pred_bull"))}: ${p['bull']:,.2f}</div>
-                        <div style='color:#4488FF;font-size:0.8rem;'>▼ {gl("Bear Case", T("pred_bear"))}: ${p['bear']:,.2f}</div>
-                    </div>
-                    <div style='margin-top:8px;color:#8B9DB0;font-size:0.75rem;'>
-                        {gl("Volatility (Annualized)", T("volatility"))}: {p['vol_annual']:.1f}%
-                    </div>
-                </div>
-                """, unsafe_allow_html=True)
-
-        # Prediction methodology note
-        st.markdown("<br>", unsafe_allow_html=True)
-        if lang == "ko":
-            methodology = """
-            **예측 방법론:** 3가지 통계 모델의 앙상블을 사용합니다:
-            - **선형 추세 회귀**: 장기 가격 추세 포착
-            - **지수 가중 모멘텀**: 최근 수익률에 더 높은 가중치 부여
-            - **평균 회귀 모델**: 200일 이동평균 대비 과도한 편차 조정
-            - **신뢰 구간**: 역사적 변동성을 기반으로 강세/약세 시나리오 계산 (90% 신뢰구간)
-            """
-        else:
-            methodology = """
-            **Prediction Methodology:** Ensemble of 3 statistical models:
-            - **Linear Trend Regression**: Captures long-term price trajectory
-            - **Exponential Weighted Momentum**: Higher weight on recent returns
-            - **Mean Reversion Model**: Adjusts for excessive deviation from 200-day MA
-            - **Confidence Bands**: Bull/Bear scenarios based on historical volatility (90% CI)
-            """
-        st.info(methodology)
-    else:
-        st.warning("Insufficient data for prediction. Need at least 60 trading days.")
-
-# ══════════════════ TAB 3: NEWS ══════════════════
-with tabs[2]:
-    col_title, col_trans, col_update = st.columns([3, 1, 1])
-    with col_title:
-        st.markdown(f"<div class='section-header'>{T('news_title')}</div>", unsafe_allow_html=True)
-    with col_trans:
-        trans_label = ("🌐 영어로 보기" if st.session_state.news_translated else "🌐 한글 번역") if lang == "ko" else ("🌐 Show English" if st.session_state.news_translated else "🌐 한글 번역")
-        if st.button(trans_label, use_container_width=True):
-            st.session_state.news_translated = not st.session_state.news_translated
-            st.rerun()
-    with col_update:
-        if st.button("🔄 " + ("새로고침" if lang == "ko" else "Refresh"), use_container_width=True):
-            st.cache_data.clear()
-            st.rerun()
-
-    now_str = datetime.now().strftime("%Y-%m-%d %H:%M")
-    st.markdown(f"<span class='update-badge'>🟢 {T('last_updated')}: {now_str} UTC</span>", unsafe_allow_html=True)
-    if st.session_state.news_translated:
-        st.markdown("<span class='update-badge' style='background:#1E3A5F;color:#64B5F6;margin-left:8px;'>🌐 한글 번역 중</span>", unsafe_allow_html=True)
-    st.markdown("<br>", unsafe_allow_html=True)
-
-    with st.spinner(T("news_loading")):
-        articles = fetch_news(lang)
-
-    if articles:
-        # Filter by ticker if not index
-        relevant = []
-        other = []
-        for art in articles:
-            title_lower = art["title"].lower()
-            ticker_lower = ticker.lower().replace("^", "").replace("=f", "")
-            company_lower = company_name.lower()
-            is_relevant = (
-                ticker_lower in title_lower
-                or any(w in title_lower for w in company_lower.split()[:2])
-                or any(w in title_lower for w in ["market", "stock", "fed", "rate", "inflation",
-                                                    "gdp", "economy", "wall street", "s&p", "nasdaq",
-                                                    "dow", "시장", "주식", "연준", "금리"])
-            )
-            if is_relevant:
-                relevant.append(art)
-            else:
-                other.append(art)
-
-        all_arts = relevant + other
-
-        # Display news in grid
-        n_cols = 2
-        for i in range(0, min(len(all_arts), 20), n_cols):
-            row_arts = all_arts[i:i+n_cols]
-            cols = st.columns(n_cols)
-            for col, art in zip(cols, row_arts):
-                with col:
-                    title_text = art["title"]
-                    summary_text = art["summary"]
-                    if st.session_state.news_translated:
-                        with st.spinner("번역 중..."):
-                            title_text = translate_to_korean(title_text)
-                            summary_text = translate_to_korean(summary_text)
-                    st.markdown(f"""
-                    <div class='news-card'>
-                        <div class='news-title'><a href='{art['link']}' target='_blank' style='color:#EAEAEA;text-decoration:none;'>{title_text}</a></div>
-                        <div class='news-meta'>📡 {art['source']} &nbsp;|&nbsp; 🕐 {art['published'][:20] if art['published'] else 'N/A'}</div>
-                        <div class='news-summary'>{summary_text}</div>
-                    </div>
-                    """, unsafe_allow_html=True)
-    else:
-        st.warning("Could not load news. Check your internet connection." if lang == "en" else "뉴스를 불러올 수 없습니다. 인터넷 연결을 확인하세요.")
-
-# ══════════════════ TAB 4: GEOPOLITICAL ══════════════════
-with tabs[3]:
-    _geo_hdr_col, _geo_btn_col = st.columns([4, 1])
-    with _geo_hdr_col:
-        st.markdown(f"<div class='section-header'>{T('geo_title')}</div>", unsafe_allow_html=True)
-    with _geo_btn_col:
-        _geo_btn_label = ("🌐 영어로 보기" if st.session_state.geo_translated else "🌐 한글 번역") if lang == "en" else ("🌐 영어로 보기" if st.session_state.geo_translated else "🌐 한글 번역")
-        if st.button(_geo_btn_label, key="geo_trans_btn", use_container_width=True):
-            st.session_state.geo_translated = not st.session_state.geo_translated
-            st.rerun()
-
-    # Current macro metrics
-    gcol1, gcol2, gcol3, gcol4, gcol5 = st.columns(5)
-    macro_display = [
-        (gl("VIX (공포지수)" if lang == "ko" else "VIX", T("geo_vix")), "VIX", "#FF4B4B"),
-        (gl("WTI 원유" if lang == "ko" else "WTI", T("geo_oil")), "Oil (WTI)", "#FFA500"),
-        (gl("금" if lang == "ko" else "Gold", T("geo_gold")), "Gold", "#FFD700"),
-        (gl("달러 인덱스 (DXY)" if lang == "ko" else "USD Index (DXY)", T("geo_dxy")), "USD Index", "#64B5F6"),
-        (gl("미국채 10년 수익률" if lang == "ko" else "10Y Treasury", T("geo_bonds")), "10Y Treasury", "#AB63FA"),
-    ]
-    for col, (label, key, color) in zip([gcol1, gcol2, gcol3, gcol4, gcol5], macro_display):
-        data = macro_data.get(key, {})
-        val = data.get("current", 0)
-        chg = data.get("change_pct", 0)
-        chg_color = "#FF4040" if chg >= 0 else "#4488FF"
-        col.markdown(f"""
-        <div class='metric-card'>
-            <div class='metric-label'>{label}</div>
-            <div style='font-size:1.2rem;font-weight:700;color:{color};'>{val:,.2f}</div>
-            <div style='color:{chg_color};font-size:0.85rem;'>{chg:+.2f}%</div>
-        </div>
-        """, unsafe_allow_html=True)
-
-    st.markdown("<br>", unsafe_allow_html=True)
-
-    # Risk factors
-    st.markdown(f"<div class='section-header'>{T('geo_factors')}</div>", unsafe_allow_html=True)
-
-    risk_factors_ko = [
-        ("🇺🇸🇨🇳 미-중 무역 갈등", "높음", "트럼프 관세 145% 부과 → 반도체·기술주 압박, 공급망 재편 가속화", "high_risk"),
-        ("🏦 연준(Fed) 통화정책", "중간", "2025년 금리 동결 기조 유지, 연내 1-2회 인하 가능성 → 성장주 긍정적", "med_risk"),
-        ("🛢️ 중동 지정학 리스크", "중간", "이란-이스라엘 긴장 지속, WTI 가격 변동성 에너지 섹터 영향", "med_risk"),
-        ("🇷🇺🇺🇦 러시아-우크라이나", "중간", "전쟁 장기화, 유럽 에너지 공급 불안 지속, 방산주 수혜", "med_risk"),
-        ("💹 AI 과열 논쟁", "낮음", "엔비디아 등 AI 밸류에이션 논란, 실적 기반 검증 국면 진입", "low_risk"),
-        ("📉 미국 국가부채", "중간", "35조 달러 돌파, 재정 적자 지속 → 장기 금리 상승 압력", "med_risk"),
-    ]
-    risk_factors_en = [
-        ("🇺🇸🇨🇳 US-China Trade War", "HIGH", "Trump 145% tariffs → Tech/semiconductor pressure, supply chain restructuring", "high_risk"),
-        ("🏦 Fed Monetary Policy", "MEDIUM", "Rate hold in 2025, 1-2 cuts possible → Positive for growth stocks", "med_risk"),
-        ("🛢️ Middle East Tensions", "MEDIUM", "Iran-Israel tensions persist, WTI oil price volatility impacts energy sector", "med_risk"),
-        ("🇷🇺🇺🇦 Russia-Ukraine War", "MEDIUM", "Prolonged conflict, EU energy supply uncertainty, defense stocks benefit", "med_risk"),
-        ("💹 AI Bubble Concerns", "LOW", "NVIDIA etc. valuation debate, entering earnings-validation phase", "low_risk"),
-        ("📉 US National Debt", "MEDIUM", "$35T+ debt, fiscal deficit → Long-term rate upward pressure", "med_risk"),
-    ]
-
-    if st.session_state.geo_translated:
-        # When translated: always show Korean
-        risk_factors = risk_factors_ko
-    else:
-        risk_factors = risk_factors_ko if lang == "ko" else risk_factors_en
-    risk_labels = {
-        "high_risk": (T("high_risk"), "risk-high"),
-        "med_risk": (T("med_risk"), "risk-med"),
-        "low_risk": (T("low_risk"), "risk-low"),
-    }
-
-    rf_col1, rf_col2 = st.columns(2)
-    for i, (title, risk_key, desc, risk_type) in enumerate(risk_factors):
-        risk_text, risk_class = risk_labels[risk_type]
-        target_col = rf_col1 if i % 2 == 0 else rf_col2
-        with target_col:
-            st.markdown(f"""
-            <div class='geo-card'>
-                <div style='display:flex;justify-content:space-between;align-items:center;'>
-                    <span style='font-weight:700;color:#EAEAEA;font-size:0.95rem;'>{title}</span>
-                    <span class='{risk_class}'>[{risk_text}]</span>
-                </div>
-                <div style='color:#B0BEC5;font-size:0.82rem;margin-top:6px;'>{desc}</div>
+        # Technical indicators summary
+        st.markdown(f"<div class='section-header'>{T('technical_indicators')}</div>", unsafe_allow_html=True)
+        ti_cols = st.columns(5)
+        _rsi_label = gl("RSI (14)", T("rsi"))
+        _macd_label = gl("MACD", T("macd"))
+        _sma50_label = gl("SMA50", T("sma50"))
+        _sma200_label = gl("SMA200", T("sma200"))
+        _beta_label = gl("Beta vs S&P 500", T("beta"))
+        ind_data = [
+            (_rsi_label, f"{df_2y['RSI'].iloc[-1]:.1f}" if "RSI" in df_2y.columns and not pd.isna(df_2y["RSI"].iloc[-1]) else "N/A",
+             "#FF4B4B" if "RSI" in df_2y.columns and not pd.isna(df_2y["RSI"].iloc[-1]) and df_2y["RSI"].iloc[-1] > 70
+             else "#00D4AA" if "RSI" in df_2y.columns and not pd.isna(df_2y["RSI"].iloc[-1]) and df_2y["RSI"].iloc[-1] < 30
+             else "#FFA500"),
+            (_macd_label, f"{df_2y['MACD'].iloc[-1]:.3f}" if "MACD" in df_2y.columns else "N/A", "#8B9DB0"),
+            (_sma50_label, f"${df_2y['SMA50'].iloc[-1]:,.2f}" if "SMA50" in df_2y.columns and not pd.isna(df_2y["SMA50"].iloc[-1]) else "N/A", "#FFD700"),
+            (_sma200_label, f"${df_2y['SMA200'].iloc[-1]:,.2f}" if "SMA200" in df_2y.columns and not pd.isna(df_2y["SMA200"].iloc[-1]) else "N/A", "#FF8C00"),
+            (_beta_label, f"{info.get('beta', 'N/A')}", "#AB63FA"),
+        ]
+        for col, (label, val, color) in zip(ti_cols, ind_data):
+            col.markdown(f"""
+            <div class='metric-card'>
+                <div class='metric-label'>{label}</div>
+                <div style='font-size:1.1rem;font-weight:700;color:{color};'>{val}</div>
             </div>
             """, unsafe_allow_html=True)
 
-    st.markdown("<br>", unsafe_allow_html=True)
+        # Sentiment gauge
+        sentiment = get_sentiment(df_2y)
+        sent_label = sentiment["label_ko"] if lang == "ko" else sentiment["label_en"]
+        sent_color = "#FF4040" if sent_label in ["Bullish", "강세"] else "#4488FF" if sent_label in ["Bearish", "약세"] else "#FFA500"
 
-    # Historical geopolitical events chart
-    st.plotly_chart(build_geo_timeline(lang), use_container_width=True)
-
-    # Correlation explanation
-    st.markdown(f"<div class='section-header'>{T('market_correlation')}</div>", unsafe_allow_html=True)
-    corr_data_ko = {
-        "이벤트 유형": ["금리 인상 사이클", "지정학 전쟁", "팬데믹/보건위기", "무역 전쟁", "AI/기술 붐", "금융위기"],
-        "평균 초기 충격": ["-15%", "-10%", "-34%", "-12%", "+40%", "-50%"],
-        "회복 기간": ["12-18개월", "3-6개월", "12개월", "6-12개월", "지속 상승", "24-36개월"],
-        "수혜 섹터": ["금융, 에너지", "방산, 에너지", "바이오, 기술", "소재, 국내소비", "기술, 반도체", "헬스케어, 필수소비재"],
-    }
-    corr_data_en = {
-        "Event Type": ["Rate Hike Cycle", "Geopolitical War", "Pandemic/Health Crisis", "Trade War", "AI/Tech Boom", "Financial Crisis"],
-        "Avg Initial Shock": ["-15%", "-10%", "-34%", "-12%", "+40%", "-50%"],
-        "Recovery Period": ["12-18 months", "3-6 months", "12 months", "6-12 months", "Sustained Rally", "24-36 months"],
-        "Beneficiary Sectors": ["Finance, Energy", "Defense, Energy", "Biotech, Tech", "Materials, Domestic", "Tech, Semiconductors", "Healthcare, Staples"],
-    }
-    corr_df = pd.DataFrame(corr_data_ko if lang == "ko" else corr_data_en)
-    st.dataframe(corr_df, use_container_width=True, hide_index=True)
-
-# ══════════════════ TAB 5: HISTORY ══════════════════
-with tabs[4]:
-    st.markdown(f"<div class='section-header'>{T('hist_title')}</div>", unsafe_allow_html=True)
-
-    # 2-line summary
-    st.markdown(f"**{T('summary_analysis')}**")
-    summary = generate_2line_summary(ticker, df_max, info, lang)
-    if summary:
-        st.markdown(f"<div class='summary-box'>{summary}</div>", unsafe_allow_html=True)
-
-    st.markdown("<br>", unsafe_allow_html=True)
-
-    # Long-term price chart with events overlay
-    if not df_max.empty:
-        close_max = df_max["Close"]
-        if close_max.ndim == 2:
-            close_max = close_max.iloc[:, 0]
-
-        fig_hist = go.Figure()
-        fig_hist.add_trace(go.Scatter(
-            x=df_max.index,
-            y=close_max.astype(float),
-            name=company_name,
-            fill="tozeroy",
-            fillcolor="rgba(0,212,170,0.08)",
-            line=dict(color="#00D4AA", width=1.5),
-        ))
-
-        # Overlay geopolitical events — vertical text, no rotation
-        price_max = float(close_max.max())
-        for idx_e, event in enumerate(GEOPOLITICAL_EVENTS):
-            try:
-                event_date = pd.Timestamp(event["date"] + "-01")
-                if event_date >= df_max.index[0] and event_date <= df_max.index[-1]:
-                    raw_label = event[f"event_{lang}"].split("→")[0].strip()
-                    # Build top-to-bottom text: each character on its own line
-                    vertical_text = "<br>".join(list(raw_label))
-                    color = "#4488FF" if event["impact"] < 0 else "#FF4040"
-                    # Alternate y positions to prevent overlap
-                    y_pos = price_max * (0.92 - (idx_e % 3) * 0.10)
-                    fig_hist.add_vline(
-                        x=event_date, line_dash="dot",
-                        line_color=color, line_width=1.5, opacity=0.6,
-                    )
-                    fig_hist.add_annotation(
-                        x=event_date,
-                        y=y_pos,
-                        text=vertical_text,
-                        showarrow=False,
-                        textangle=0,
-                        font=dict(size=8, color=color, family="monospace"),
-                        bgcolor="rgba(14,17,23,0.75)",
-                        bordercolor=color,
-                        borderwidth=1,
-                        borderpad=2,
-                        align="center",
-                        xanchor="center",
-                        yanchor="top",
-                    )
-            except Exception:
-                continue
-
-        fig_hist.update_layout(
-            template="plotly_dark",
-            height=580,
-            title=f"{company_name} — {'Full History with Key Events' if lang == 'en' else '전체 역사 & 주요 이벤트'}",
-            xaxis=dict(
-                rangeselector=_rangeselector(lang),
-                rangeslider=dict(visible=False),
-                type="date",
-                title="Date" if lang == "en" else "날짜",
-            ),
-            yaxis_title="Price (USD)" if lang == "en" else "주가 (USD)",
-            margin=dict(l=0, r=0, t=70, b=0),
-            plot_bgcolor="#0E1117",
-            paper_bgcolor="#0E1117",
-        )
-        st.plotly_chart(fig_hist, use_container_width=True)
-
-    # Annual returns table
-    st.markdown(f"<div class='section-header'>{'Annual Returns' if lang == 'en' else '연도별 수익률'}</div>", unsafe_allow_html=True)
-
-    if not df_max.empty:
-        close_max = df_max["Close"]
-        if close_max.ndim == 2:
-            close_max = close_max.iloc[:, 0]
-        close_max = close_max.astype(float)
-
-        annual_data = []
-        df_yearly = close_max.resample("YE").last()
-        for i in range(1, len(df_yearly)):
-            year = df_yearly.index[i].year
-            ret = (df_yearly.iloc[i] / df_yearly.iloc[i - 1] - 1) * 100
-            annual_data.append({
-                ("Year" if lang == "en" else "연도"): year,
-                ("Return" if lang == "en" else "수익률"): f"{ret:+.1f}%",
-                ("Price" if lang == "en" else "종가"): f"${df_yearly.iloc[i]:,.2f}",
-                ("Performance" if lang == "en" else "성과"): "🟢 상승" if ret > 0 else "🔴 하락",
-            })
-
-        if annual_data:
-            df_annual = pd.DataFrame(annual_data).tail(15)
-            st.dataframe(df_annual, use_container_width=True, hide_index=True)
-
-# ══════════════════ TAB 6 + 7 RENDERED BELOW AFTER DB DEFINITIONS ══════════════════
-# (see end of file after DB defs)
-
-# ══════════════════ TAB 6: COMPANY HISTORY DB ══════════════════
-COMPANY_HISTORY_DB = {
-    "AAPL": {
-        "name": "Apple Inc.",
-        "founded": "1976",
-        "founders": "Steve Jobs, Steve Wozniak, Ronald Wayne",
-        "en": [
-            ("1976", "🍎 Founded", "Apple Computer Co. founded in Jobs' garage. First product: Apple I personal computer."),
-            ("1980", "📈 IPO", "Apple goes public at $22/share. Biggest US IPO since Ford Motor in 1956."),
-            ("1984", "💻 Macintosh", "Iconic '1984' Super Bowl ad. First mass-market GUI computer launched."),
-            ("1985", "🚪 Jobs Exits", "Steve Jobs forced out by board. Company struggles through late 80s/90s."),
-            ("1997", "🔄 Jobs Returns", "Apple acquires NeXT for $429M, bringing Jobs back. Company near bankruptcy."),
-            ("1998", "🖥️ iMac", "Colorful all-in-one iMac launches. Design-led revival begins."),
-            ("2001", "🎵 iPod + iTunes", "iPod changes the music industry. iTunes Store follows in 2003."),
-            ("2007", "📱 iPhone", "Steve Jobs unveils iPhone. Smartphone revolution begins."),
-            ("2008", "📲 App Store", "App Store launches with 500 apps. Transforms software distribution."),
-            ("2010", "📺 iPad", "iPad creates the modern tablet category."),
-            ("2011", "💔 Jobs Passes", "Steve Jobs passes away. Tim Cook becomes CEO."),
-            ("2014", "⌚ Apple Watch", "Wearables division begins. Watch + Health ecosystem expands."),
-            ("2016", "🔧 Services Era", "Services (iCloud, Apple Music, App Store) become key revenue driver."),
-            ("2020", "💰 $2T Valuation", "First US company to reach $2 trillion market cap."),
-            ("2021", "🔬 Apple Silicon", "M1 chip — Apple's own ARM-based processor. Breaks Intel dependency."),
-            ("2023", "🥽 Vision Pro", "Apple Vision Pro spatial computing headset announced at $3,499."),
-            ("2024", "🤖 Apple Intelligence", "On-device AI features. Partnership with OpenAI for Siri enhancement."),
-        ],
-        "ko": [
-            ("1976", "🍎 창업", "잡스의 차고에서 애플컴퓨터 설립. 첫 제품: Apple I 개인용 컴퓨터."),
-            ("1980", "📈 상장", "주당 22달러로 IPO. 포드모터 이후 최대 규모 미국 IPO."),
-            ("1984", "💻 매킨토시", "전설적인 '1984' 슈퍼볼 광고. 최초 대중용 GUI 컴퓨터 출시."),
-            ("1985", "🚪 잡스 퇴출", "이사회에 의해 잡스 축출. 80-90년대 암흑기 시작."),
-            ("1997", "🔄 잡스 복귀", "NeXT 4억2900만 달러에 인수하며 잡스 복귀. 회사는 파산 위기."),
-            ("1998", "🖥️ iMac", "컬러풀한 일체형 iMac 출시. 디자인 중심 부활의 시작."),
-            ("2001", "🎵 iPod + iTunes", "iPod으로 음악 산업 판도 변경. 2003년 iTunes 스토어 오픈."),
-            ("2007", "📱 아이폰", "스티브 잡스 아이폰 공개. 스마트폰 혁명 시작."),
-            ("2008", "📲 앱스토어", "500개 앱으로 앱스토어 오픈. 소프트웨어 유통 혁신."),
-            ("2010", "📺 아이패드", "현대적 태블릿 카테고리 창조."),
-            ("2011", "💔 잡스 별세", "스티브 잡스 별세. 팀 쿡 CEO 취임."),
-            ("2014", "⌚ 애플워치", "웨어러블 사업부 시작. 건강 생태계 확장."),
-            ("2016", "🔧 서비스 시대", "iCloud·애플뮤직·앱스토어 등 서비스가 핵심 수익원으로."),
-            ("2020", "💰 시총 2조 달러", "미국 최초 시가총액 2조 달러 돌파."),
-            ("2021", "🔬 애플 실리콘", "자체 ARM 기반 M1 칩 출시. 인텔 의존도 탈피."),
-            ("2023", "🥽 비전 프로", "공간 컴퓨팅 헤드셋 애플 비전 프로 3499달러에 발표."),
-            ("2024", "🤖 애플 인텔리전스", "온디바이스 AI 기능. OpenAI와 파트너십으로 시리 강화."),
-        ],
-    },
-    "MSFT": {
-        "name": "Microsoft Corporation",
-        "founded": "1975",
-        "founders": "Bill Gates, Paul Allen",
-        "en": [
-            ("1975", "🖥️ Founded", "Gates and Allen found Microsoft in Albuquerque, NM. First product: BASIC interpreter for Altair 8800."),
-            ("1981", "💾 MS-DOS", "IBM licenses MS-DOS for its PC. Microsoft retains rights — pivotal decision."),
-            ("1985", "🪟 Windows 1.0", "First Windows OS launched. GUI interface for IBM-compatible PCs."),
-            ("1986", "📈 IPO", "Microsoft goes public at $21/share. Gates becomes a billionaire at 31."),
-            ("1990", "📦 Office Suite", "Microsoft Office (Word+Excel+PowerPoint) bundles become dominant."),
-            ("1995", "🌐 Windows 95 + IE", "Windows 95 massive launch. Internet Explorer bundled — browser wars begin."),
-            ("2000", "⚖️ Antitrust", "DOJ antitrust case. Judge orders breakup (overturned on appeal). Stock peaks."),
-            ("2001", "🎮 Xbox", "Xbox console launched, entering gaming market against Sony PlayStation."),
-            ("2008", "☁️ Azure", "Microsoft Azure cloud platform launches. Cloud-first pivot begins."),
-            ("2014", "🔄 Nadella CEO", "Satya Nadella becomes CEO. Open-source pivot, cloud-first strategy."),
-            ("2016", "💼 LinkedIn $26B", "Acquires LinkedIn for $26.2 billion."),
-            ("2018", "🐙 GitHub $7.5B", "Acquires GitHub for $7.5 billion. Developer community trust rebuilt."),
-            ("2020", "🎮 Activision Deal", "Gaming push: $68.7B Activision Blizzard deal announced (closed 2023)."),
-            ("2023", "🤖 OpenAI $10B", "$10B investment in OpenAI. Copilot AI integrated across all products."),
-            ("2024", "👑 $3T Valuation", "Briefly surpasses Apple as world's most valuable company at $3T+."),
-        ],
-        "ko": [
-            ("1975", "🖥️ 창업", "게이츠와 앨런, 뉴멕시코 주 앨버커키에서 마이크로소프트 설립. 첫 제품: Altair 8800용 BASIC 인터프리터."),
-            ("1981", "💾 MS-DOS", "IBM이 MS-DOS 라이선스 취득. MS는 권리 보유 — 역사적 결정."),
-            ("1985", "🪟 윈도우 1.0", "첫 윈도우 OS 출시. IBM 호환 PC용 GUI 인터페이스."),
-            ("1986", "📈 상장", "주당 21달러 IPO. 게이츠, 31세에 억만장자."),
-            ("1990", "📦 오피스 제품군", "마이크로소프트 오피스(워드+엑셀+파워포인트) 번들이 시장 지배."),
-            ("1995", "🌐 윈도우95 + IE", "윈도우95 대대적 출시. IE 번들 — 브라우저 전쟁 시작."),
-            ("2000", "⚖️ 독점금지 소송", "DOJ 반독점 소송. 분할 명령(항소심 취소). 주가 고점."),
-            ("2001", "🎮 엑스박스", "엑스박스 콘솔 출시. 소니 플레이스테이션과 게임 시장 경쟁."),
-            ("2008", "☁️ 애저", "마이크로소프트 애저 클라우드 플랫폼 출시. 클라우드 전환 시작."),
-            ("2014", "🔄 나델라 CEO", "사티아 나델라 CEO 취임. 오픈소스 전환, 클라우드 퍼스트 전략."),
-            ("2016", "💼 링크드인 260억불", "링크드인 262억 달러에 인수."),
-            ("2018", "🐙 깃허브 75억불", "깃허브 75억 달러에 인수. 개발자 커뮤니티 신뢰 회복."),
-            ("2020", "🎮 액티비전", "게임 강화: 687억 달러 액티비전블리자드 인수 발표 (2023년 완료)."),
-            ("2023", "🤖 오픈AI 100억불", "오픈AI 100억 달러 투자. 코파일럿 AI 전 제품 통합."),
-            ("2024", "👑 시총 3조 달러", "잠시 애플 제치고 세계 최고 시총 3조 달러+ 달성."),
-        ],
-    },
-    "NVDA": {
-        "name": "NVIDIA Corporation",
-        "founded": "1993",
-        "founders": "Jensen Huang, Chris Malachowsky, Curtis Priem",
-        "en": [
-            ("1993", "🟩 Founded", "Jensen Huang, Chris Malachowsky, and Curtis Priem found NVIDIA in Sunnyvale, CA."),
-            ("1995", "🎮 NV1 GPU", "First product NV1 launched. Early 3D graphics for gaming."),
-            ("1999", "💎 GeForce 256", "Coined term 'GPU'. GeForce 256 is world's first GPU. Nvidia goes public."),
-            ("2006", "⚡ CUDA", "CUDA parallel computing platform launched. Unlocks GPU for general computing beyond graphics."),
-            ("2012", "🧠 AlexNet Moment", "Deep learning breakthrough — AlexNet trained on NVIDIA GPUs wins ImageNet. AI era begins."),
-            ("2016", "🚗 Autonomous Driving", "NVIDIA Drive PX platform for self-driving cars. Partners with Tesla, Toyota."),
-            ("2018", "🔬 RTX Ray Tracing", "RTX 20 series — real-time ray tracing for photorealistic gaming graphics."),
-            ("2019", "🔴 Mellanox $6.9B", "Acquires Mellanox for $6.9B. Enters data center networking."),
-            ("2020", "💰 ARM Deal", "$40B Arm acquisition announced (blocked by regulators in 2022)."),
-            ("2022", "🤖 ChatGPT Era", "ChatGPT launches. H100 GPU demand explodes. Nvidia supply shortages begin."),
-            ("2023", "🚀 $1T Club", "Joins $1 trillion market cap club. H100 becomes the 'gold of AI'."),
-            ("2024", "👑 #1 Most Valuable", "Briefly becomes world's most valuable company. Blackwell B200 GPU announced."),
-            ("2025", "🌐 Sovereign AI", "Nations building AI infrastructure — NVIDIA at center of global AI arms race."),
-        ],
-        "ko": [
-            ("1993", "🟩 창업", "젠슨 황, 크리스 말라초프스키, 커티스 프리엠이 캘리포니아 서니베일에서 엔비디아 설립."),
-            ("1995", "🎮 NV1 GPU", "첫 제품 NV1 출시. 게임용 초기 3D 그래픽."),
-            ("1999", "💎 지포스 256", "'GPU' 용어 창안. 지포스 256은 세계 최초 GPU. 나스닥 상장."),
-            ("2006", "⚡ CUDA", "CUDA 병렬 컴퓨팅 플랫폼 출시. 그래픽 외 범용 컴퓨팅으로 GPU 영역 확장."),
-            ("2012", "🧠 알렉스넷 모멘트", "딥러닝 혁신 — 알렉스넷이 NVIDIA GPU로 훈련하여 ImageNet 우승. AI 시대 시작."),
-            ("2016", "🚗 자율주행", "자율주행용 NVIDIA Drive PX 플랫폼. 테슬라·토요타와 파트너십."),
-            ("2018", "🔬 RTX 레이트레이싱", "RTX 20 시리즈 — 사실적 게임 그래픽용 실시간 레이트레이싱."),
-            ("2019", "🔴 멜라녹스 69억불", "멜라녹스 69억 달러 인수. 데이터센터 네트워킹 진출."),
-            ("2020", "💰 ARM 인수 시도", "400억 달러 ARM 인수 발표 (규제 당국에 의해 2022년 무산)."),
-            ("2022", "🤖 챗GPT 시대", "챗GPT 출시. H100 GPU 수요 폭발. 엔비디아 공급 부족 시작."),
-            ("2023", "🚀 시총 1조 달러", "시가총액 1조 달러 클럽 합류. H100은 'AI의 금'으로 불림."),
-            ("2024", "👑 세계 1위 기업", "잠시 세계 최고 시가총액 기업 등극. 블랙웰 B200 GPU 발표."),
-            ("2025", "🌐 소버린 AI", "각국이 AI 인프라 구축 — 엔비디아가 글로벌 AI 군비경쟁의 중심."),
-        ],
-    },
-    "TSLA": {
-        "name": "Tesla, Inc.",
-        "founded": "2003",
-        "founders": "Martin Eberhard, Marc Tarpenning (Elon Musk joined 2004)",
-        "en": [
-            ("2003", "⚡ Founded", "Martin Eberhard and Marc Tarpenning found Tesla Motors in San Carlos, CA."),
-            ("2004", "💼 Musk Invests", "Elon Musk leads Series A funding of $7.5M. Becomes chairman."),
-            ("2008", "🚗 Roadster", "First Tesla Roadster delivered. World's first highway-legal electric sports car. Musk becomes CEO."),
-            ("2010", "📈 IPO", "Tesla IPO at $17/share. First US automaker IPO since Ford in 1956."),
-            ("2012", "🚘 Model S", "Model S sedan launched. Named Motor Trend Car of the Year. Supercharger network begins."),
-            ("2015", "🔋 Powerwall", "Tesla Energy division. Powerwall home battery + utility-scale Powerpack."),
-            ("2016", "🤖 Autopilot", "Autopilot hardware 2.0. Acquires SolarCity for $2.6B."),
-            ("2017", "🏭 Gigafactory 1", "Nevada Gigafactory operational. Battery production at scale begins."),
-            ("2019", "🛻 Cybertruck Reveal", "Cybertruck unveiled. 'Armored glass' incident becomes viral moment."),
-            ("2020", "💰 S&P 500 Entry", "Tesla added to S&P 500. Stock rises 743% in 2020. Joins $1T club briefly."),
-            ("2021", "⚡ 4680 Battery", "Structural battery pack + 4680 cells. New architecture for cost reduction."),
-            ("2022", "🤖 Optimus Robot", "Tesla Bot (Optimus) humanoid robot revealed. AI Day showcase."),
-            ("2023", "📉 Price Wars", "Tesla cuts prices aggressively. Margin pressure. Cybertruck finally delivered."),
-            ("2024", "🚕 Robotaxi", "FSD v12 neural net driving. Robotaxi event showcasing autonomous future."),
-        ],
-        "ko": [
-            ("2003", "⚡ 창업", "마틴 에버하드와 마크 타페닝이 캘리포니아 산카를로스에서 테슬라모터스 설립."),
-            ("2004", "💼 머스크 투자", "일론 머스크가 750만 달러 시리즈A 투자 주도. 이사회 의장 취임."),
-            ("2008", "🚗 로드스터", "첫 테슬라 로드스터 인도. 세계 최초 고속도로 주행 가능 전기 스포츠카. 머스크 CEO."),
-            ("2010", "📈 상장", "주당 17달러 IPO. 1956년 포드 이후 최초 미국 자동차기업 IPO."),
-            ("2012", "🚘 모델 S", "모델 S 세단 출시. 모터트렌드 올해의 차 선정. 슈퍼차저 네트워크 시작."),
-            ("2015", "🔋 파워월", "테슬라 에너지 사업부. 가정용 파워월 + 산업용 파워팩."),
-            ("2016", "🤖 오토파일럿", "오토파일럿 하드웨어 2.0. 26억 달러에 솔라시티 인수."),
-            ("2017", "🏭 기가팩토리 1", "네바다 기가팩토리 가동. 배터리 대량 생산 시작."),
-            ("2019", "🛻 사이버트럭 공개", "사이버트럭 공개. '강화유리' 사고가 바이럴 명장면으로."),
-            ("2020", "💰 S&P 500 편입", "테슬라 S&P 500 편입. 2020년 주가 743% 상승. 잠시 1조 달러 클럽."),
-            ("2021", "⚡ 4680 배터리", "구조용 배터리 팩 + 4680 셀. 원가 절감을 위한 새 아키텍처."),
-            ("2022", "🤖 옵티머스 로봇", "테슬라봇(옵티머스) 인간형 로봇 공개. AI 데이 쇼케이스."),
-            ("2023", "📉 가격 전쟁", "테슬라 공격적 가격 인하. 마진 압박. 사이버트럭 드디어 인도."),
-            ("2024", "🚕 로보택시", "FSD v12 신경망 자율주행. 자율주행 미래 선보이는 로보택시 이벤트."),
-        ],
-    },
-}
-
-COMPANY_RELATIONS_DB = {
-    "AAPL": {
-        "suppliers_en": [
-            ("TSMC (Taiwan)", "A-series / M-series chip fabrication", "Critical", "#FF4B4B"),
-            ("Samsung (Korea)", "OLED displays, NAND flash memory", "High", "#FFA500"),
-            ("Foxconn (Taiwan/China)", "iPhone assembly — 70% of production", "Critical", "#FF4B4B"),
-            ("Corning (USA)", "Gorilla Glass for all iPhone screens", "High", "#FFA500"),
-            ("Broadcom (USA)", "Wi-Fi / Bluetooth chips", "Medium", "#FFD700"),
-            ("Murata (Japan)", "Capacitors, wireless components", "Medium", "#FFD700"),
-            ("LG Energy (Korea)", "Battery cells for MacBook / iPad", "Medium", "#FFD700"),
-            ("Skyworks (USA)", "RF chips for cellular connectivity", "Medium", "#FFD700"),
-        ],
-        "competitors_en": [
-            ("Samsung", "Smartphones, tablets, wearables — direct global rival"),
-            ("Google / Alphabet", "Android OS ecosystem, Pixel phones, AI assistant"),
-            ("Microsoft", "PC/laptop market, cloud services (Azure vs iCloud)"),
-            ("Meta", "VR/AR headsets — Vision Pro vs Quest"),
-            ("Spotify", "Music streaming vs Apple Music"),
-            ("Amazon", "Smart home, voice assistant (Alexa vs Siri)"),
-        ],
-        "customers_en": [
-            ("Consumer (Direct)", "~60% revenue — iPhones sold via Apple Store, carriers"),
-            ("Enterprise", "Corporate Mac/iPad deployments, MDM ecosystem"),
-            ("Education", "iPad in Education program — millions of devices"),
-            ("Developers", "App Store ecosystem — 30M+ registered developers"),
-        ],
-        "resources_en": [
-            ("Rare Earth Metals", "Neodymium (magnets), Terbium — sourced from China/Australia"),
-            ("Cobalt", "Battery cathode — primarily DRC (Congo). ESG risk."),
-            ("Aluminum", "MacBook/iPhone chassis — global commodity"),
-            ("Silicon Wafers", "Semiconductor base — TSMC processes"),
-            ("Lithium", "Battery anodes — Chile, Australia sourcing"),
-        ],
-        "subsidiaries_en": [
-            ("Beats Electronics", "Acquired 2014 for $3B — headphones & audio"),
-            ("Shazam", "Acquired 2018 for $400M — music recognition"),
-            ("Intel Modem Division", "Acquired 2019 for $1B — 5G modem tech"),
-            ("AuthenTec", "Acquired 2012 for $356M — Touch ID fingerprint tech"),
-        ],
-        "suppliers_ko": [
-            ("TSMC (대만)", "A시리즈/M시리즈 칩 파운드리", "핵심", "#FF4B4B"),
-            ("삼성 (한국)", "OLED 디스플레이, NAND 플래시 메모리", "높음", "#FFA500"),
-            ("폭스콘 (대만/중국)", "아이폰 조립 — 생산의 70%", "핵심", "#FF4B4B"),
-            ("코닝 (미국)", "전 아이폰 화면용 고릴라 글라스", "높음", "#FFA500"),
-            ("브로드컴 (미국)", "Wi-Fi / 블루투스 칩", "중간", "#FFD700"),
-            ("무라타 (일본)", "커패시터, 무선 부품", "중간", "#FFD700"),
-            ("LG에너지솔루션 (한국)", "맥북/아이패드용 배터리 셀", "중간", "#FFD700"),
-            ("스카이웍스 (미국)", "셀룰러 연결용 RF 칩", "중간", "#FFD700"),
-        ],
-        "competitors_ko": [
-            ("삼성", "스마트폰, 태블릿, 웨어러블 — 직접 글로벌 경쟁자"),
-            ("구글/알파벳", "안드로이드 OS 생태계, 픽셀폰, AI 어시스턴트"),
-            ("마이크로소프트", "PC/노트북 시장, 클라우드 서비스 (애저 vs iCloud)"),
-            ("메타", "VR/AR 헤드셋 — 비전 프로 vs 퀘스트"),
-            ("스포티파이", "음악 스트리밍 vs 애플뮤직"),
-            ("아마존", "스마트홈, 음성 어시스턴트 (알렉사 vs 시리)"),
-        ],
-        "customers_ko": [
-            ("일반 소비자 (직접)", "매출 약 60% — 애플스토어·통신사 통해 아이폰 판매"),
-            ("기업", "법인 맥/아이패드 도입, MDM 생태계"),
-            ("교육기관", "아이패드 교육 프로그램 — 수백만 기기"),
-            ("개발자", "앱스토어 생태계 — 3000만+ 등록 개발자"),
-        ],
-        "resources_ko": [
-            ("희토류 금속", "네오디뮴(자석), 테르븀 — 중국/호주 소싱"),
-            ("코발트", "배터리 양극재 — 주로 DRC(콩고). ESG 리스크."),
-            ("알루미늄", "맥북/아이폰 하우징 — 글로벌 원자재"),
-            ("실리콘 웨이퍼", "반도체 기반 — TSMC 가공"),
-            ("리튬", "배터리 음극재 — 칠레, 호주 소싱"),
-        ],
-        "subsidiaries_ko": [
-            ("비츠 일렉트로닉스", "2014년 30억 달러 인수 — 헤드폰 및 오디오"),
-            ("샤잠", "2018년 4억 달러 인수 — 음악 인식"),
-            ("인텔 모뎀 사업부", "2019년 10억 달러 인수 — 5G 모뎀 기술"),
-            ("오센텍", "2012년 3억5600만 달러 인수 — 터치ID 지문 기술"),
-        ],
-    },
-    "NVDA": {
-        "suppliers_en": [
-            ("TSMC (Taiwan)", "All GPU fabrication — 4nm/3nm nodes", "Critical", "#FF4B4B"),
-            ("Samsung (Korea)", "HBM memory (High Bandwidth Memory) for H100/H200", "Critical", "#FF4B4B"),
-            ("SK Hynix (Korea)", "HBM3E memory for Blackwell B200 GPUs", "Critical", "#FF4B4B"),
-            ("Micron (USA)", "GDDR6X memory for consumer GPUs", "High", "#FFA500"),
-            ("ASE Group (Taiwan)", "Advanced chip packaging / CoWoS", "High", "#FFA500"),
-            ("Synopsys / Cadence (USA)", "EDA tools for chip design", "Medium", "#FFD700"),
-        ],
-        "competitors_en": [
-            ("AMD", "MI300X GPUs — main AI competitor. 'The #2 AI chip'"),
-            ("Intel", "Gaudi 3 AI accelerators. Battling for data center"),
-            ("Google (TPU)", "Custom TPUs power all Google AI — not for sale"),
-            ("Amazon (Trainium)", "AWS custom AI chips — reducing Nvidia dependency"),
-            ("Microsoft (Maia)", "Azure Maia AI accelerator — Microsoft custom silicon"),
-            ("Qualcomm", "AI inference chips for edge/mobile devices"),
-        ],
-        "customers_en": [
-            ("Microsoft / Azure", "Largest single cloud buyer of H100s. Billions in orders."),
-            ("Meta", "350,000+ H100s for Llama AI training"),
-            ("Google", "Large H100 buyer alongside own TPUs"),
-            ("Amazon AWS", "H100 instances. Also building own chips."),
-            ("Tesla", "D1 training cluster + FSD compute"),
-            ("OpenAI", "Primary training compute partner"),
-        ],
-        "resources_en": [
-            ("TSMC Capacity", "Allocation-limited — TSMC CoWoS packaging bottleneck"),
-            ("HBM Supply", "Samsung/SK Hynix HBM production constrained through 2025"),
-            ("Rare Earths", "Neodymium, Tantalum for chip components"),
-            ("Power Infrastructure", "H100 DGX racks require 10kW+ per unit — data center power a limit"),
-        ],
-        "subsidiaries_en": [
-            ("Mellanox (InfiniBand)", "Acquired 2020 $6.9B — AI cluster networking backbone"),
-            ("Cumulus Networks", "Acquired 2020 — network OS software"),
-            ("Arm (Stake)", "$40B acquisition blocked; still ecosystem partner"),
-            ("DeepMind partnership", "Research collaboration (not owned)"),
-        ],
-        "suppliers_ko": [
-            ("TSMC (대만)", "전 GPU 파운드리 — 4nm/3nm 공정", "핵심", "#FF4B4B"),
-            ("삼성 (한국)", "H100/H200용 HBM (고대역폭 메모리)", "핵심", "#FF4B4B"),
-            ("SK하이닉스 (한국)", "블랙웰 B200 GPU용 HBM3E 메모리", "핵심", "#FF4B4B"),
-            ("마이크론 (미국)", "소비자 GPU용 GDDR6X 메모리", "높음", "#FFA500"),
-            ("ASE그룹 (대만)", "고급 칩 패키징 / CoWoS", "높음", "#FFA500"),
-            ("시놉시스/캐던스 (미국)", "칩 설계용 EDA 툴", "중간", "#FFD700"),
-        ],
-        "competitors_ko": [
-            ("AMD", "MI300X GPU — 주요 AI 경쟁자. 'AI 칩 2위'"),
-            ("인텔", "가우디3 AI 가속기. 데이터센터 경쟁"),
-            ("구글 (TPU)", "자체 TPU로 전 구글 AI 구동 — 판매 안 함"),
-            ("아마존 (Trainium)", "AWS 자체 AI 칩 — 엔비디아 의존도 축소 시도"),
-            ("마이크로소프트 (Maia)", "애저 마이아 AI 가속기 — MS 자체 실리콘"),
-            ("퀄컴", "엣지/모바일 기기용 AI 추론 칩"),
-        ],
-        "customers_ko": [
-            ("마이크로소프트/애저", "H100 최대 단일 구매 클라우드. 수십억 달러 주문."),
-            ("메타", "라마 AI 학습용 H100 35만+ 대 구매"),
-            ("구글", "자체 TPU와 함께 대규모 H100 구매"),
-            ("아마존 AWS", "H100 인스턴스 제공. 자체 칩도 개발 중."),
-            ("테슬라", "D1 학습 클러스터 + FSD 컴퓨팅"),
-            ("오픈AI", "주요 학습 컴퓨팅 파트너"),
-        ],
-        "resources_ko": [
-            ("TSMC 생산 용량", "할당 제한 — TSMC CoWoS 패키징 병목"),
-            ("HBM 공급", "삼성/SK하이닉스 HBM 생산 2025년까지 제한"),
-            ("희토류", "칩 부품용 네오디뮴, 탄탈럼"),
-            ("전력 인프라", "H100 DGX 랙 당 10kW+ 필요 — 데이터센터 전력이 한계"),
-        ],
-        "subsidiaries_ko": [
-            ("멜라녹스 (인피니밴드)", "2020년 69억 달러 인수 — AI 클러스터 네트워킹 backbone"),
-            ("큐물러스 네트웍스", "2020년 인수 — 네트워크 OS 소프트웨어"),
-            ("Arm (지분)", "400억 달러 인수 무산; 여전히 생태계 파트너"),
-            ("딥마인드 파트너십", "연구 협력 (지분 소유 아님)"),
-        ],
-    },
-    "TSLA": {
-        "suppliers_en": [
-            ("Panasonic (Japan)", "2170 battery cells for Model 3/Y at Nevada Gigafactory", "Critical", "#FF4B4B"),
-            ("CATL (China)", "LFP battery cells for Standard Range models", "Critical", "#FF4B4B"),
-            ("LG Energy (Korea)", "Cylindrical cells for Model S/X/Cybertruck", "High", "#FFA500"),
-            ("Samsung SDI (Korea)", "Battery cells for energy storage products", "Medium", "#FFD700"),
-            ("NVIDIA", "Drive PX chips for early Autopilot (now custom HW4)", "Low", "#00D4AA"),
-            ("Mobileye (Intel)", "Early Autopilot sensor processing (ended 2016)", "Historical", "#8B9DB0"),
-        ],
-        "competitors_en": [
-            ("BYD (China)", "#1 EV seller globally in 2023. Aggressive on price."),
-            ("GM / Chevy Bolt, Silverado EV", "US legacy automaker going electric"),
-            ("Ford (F-150 Lightning, Mustang Mach-E)", "Strong brand + dealer network"),
-            ("Hyundai/Kia (Ioniq 6, EV6)", "Top-rated EVs, ICCU tech advantage"),
-            ("Rivian", "EV trucks/SUVs, Amazon delivery van partnership"),
-            ("Lucid Motors", "Premium long-range EV — targets Model S"),
-        ],
-        "customers_en": [
-            ("Consumer Direct", "No dealers — all sales via Tesla.com and stores"),
-            ("Enterprise Fleet", "Corporate EV fleets, taxi services"),
-            ("Utilities / Grid", "Megapack utility-scale battery storage"),
-            ("Homeowners", "Powerwall + Solar Roof ecosystem"),
-        ],
-        "resources_en": [
-            ("Lithium", "#1 battery input — Chile, Australia, Nevada. Price volatile."),
-            ("Cobalt", "Reduced in LFP cells but still in NCA batteries"),
-            ("Nickel", "High-nickel cathode for energy density — Russian/Indonesian supply"),
-            ("Copper", "Motors, wiring harness — extensive per vehicle"),
-            ("Rare Earths", "Permanent magnets in motors — China supply risk"),
-        ],
-        "subsidiaries_en": [
-            ("Tesla Energy", "Powerwall, Megapack, Solar Roof products"),
-            ("Tesla Insurance", "Direct auto insurance using driving behavior data"),
-            ("SolarCity (merged)", "Acquired 2016 $2.6B — solar panels, now Tesla Solar"),
-            ("The Boring Company (related)", "Elon Musk venture — Tesla vehicles in tunnels"),
-        ],
-        "suppliers_ko": [
-            ("파나소닉 (일본)", "네바다 기가팩토리에서 모델3/Y용 2170 배터리 셀", "핵심", "#FF4B4B"),
-            ("CATL (중국)", "스탠다드 레인지 모델용 LFP 배터리 셀", "핵심", "#FF4B4B"),
-            ("LG에너지솔루션 (한국)", "모델S/X/사이버트럭용 원통형 셀", "높음", "#FFA500"),
-            ("삼성SDI (한국)", "에너지 저장 제품용 배터리 셀", "중간", "#FFD700"),
-            ("엔비디아", "초기 오토파일럿용 Drive PX 칩 (현재 자체 HW4)", "낮음", "#00D4AA"),
-            ("모빌아이 (인텔)", "초기 오토파일럿 센서 처리 (2016년 종료)", "과거", "#8B9DB0"),
-        ],
-        "competitors_ko": [
-            ("BYD (중국)", "2023년 글로벌 EV 판매 1위. 공격적인 가격 정책."),
-            ("GM / 쉐보레 볼트, 실버라도 EV", "미국 전통 자동차기업의 전기차 전환"),
-            ("포드 (F-150 라이트닝, 머스탱 맥-E)", "강력한 브랜드 + 딜러 네트워크"),
-            ("현대/기아 (아이오닉6, EV6)", "최고 평가 EV, ICCU 기술 우위"),
-            ("리비안", "EV 트럭/SUV, 아마존 배달 밴 파트너십"),
-            ("루시드 모터스", "프리미엄 장거리 EV — 모델S 타겟"),
-        ],
-        "customers_ko": [
-            ("소비자 직판", "딜러 없음 — Tesla.com과 직영점에서만 판매"),
-            ("기업 차량", "법인 EV 차량대, 택시 서비스"),
-            ("전력 회사/그리드", "메가팩 유틸리티 스케일 배터리 저장"),
-            ("홈오너", "파워월 + 솔라루프 생태계"),
-        ],
-        "resources_ko": [
-            ("리튬", "배터리 1위 원료 — 칠레, 호주, 네바다. 가격 변동성 큼."),
-            ("코발트", "LFP 셀에서는 감소했으나 NCA 배터리에는 여전히 필요"),
-            ("니켈", "에너지 밀도용 고니켈 양극재 — 러시아/인도네시아 공급"),
-            ("구리", "모터, 와이어링 하네스 — 차량당 대량 사용"),
-            ("희토류", "모터 영구 자석 — 중국 공급 리스크"),
-        ],
-        "subsidiaries_ko": [
-            ("테슬라 에너지", "파워월, 메가팩, 솔라루프 제품군"),
-            ("테슬라 인슈어런스", "주행 데이터 기반 직접 자동차 보험"),
-            ("솔라시티 (합병)", "2016년 26억 달러 인수 — 태양광, 현재 테슬라 솔라"),
-            ("더 보링 컴퍼니 (관련)", "일론 머스크 벤처 — 터널 내 테슬라 차량 운행"),
-        ],
-    },
-}
-
-def get_company_history(ticker: str, lang: str) -> list:
-    key = ticker.upper().replace("^", "")
-    db = COMPANY_HISTORY_DB.get(key)
-    if not db:
-        return []
-    return db.get(lang, db.get("en", []))
-
-def get_company_meta(ticker: str) -> dict:
-    key = ticker.upper().replace("^", "")
-    return COMPANY_HISTORY_DB.get(key, {})
-
-def get_company_relations(ticker: str) -> dict:
-    key = ticker.upper().replace("^", "")
-    return COMPANY_RELATIONS_DB.get(key, {})
-
-def build_history_timeline(history: list, company_name: str, lang: str) -> go.Figure:
-    if not history:
-        return go.Figure()
-
-    years = [h[0] for h in history]
-    titles = [h[1] for h in history]
-    descs = [h[2] for h in history]
-
-    # Alternate above/below to avoid overlap
-    y_pos = [1 if i % 2 == 0 else -1 for i in range(len(history))]
-    y_text = [1.15 if y > 0 else -1.15 for y in y_pos]
-
-    fig = go.Figure()
-
-    # Timeline spine
-    fig.add_shape(type="line", x0=years[0], x1=years[-1], y0=0, y1=0,
-                  line=dict(color="#3A4060", width=2))
-
-    # Event dots and connectors
-    for i, (yr, title, desc, yp, yt) in enumerate(zip(years, titles, descs, y_pos, y_text)):
-        color = "#FFA500" if i % 3 == 0 else "#00D4AA" if i % 3 == 1 else "#AB63FA"
-        # Connector line
-        fig.add_shape(type="line", x0=yr, x1=yr, y0=0, y1=yp * 0.9,
-                      line=dict(color=color, width=1.5, dash="dot"))
-        # Dot on spine
-        fig.add_trace(go.Scatter(
-            x=[yr], y=[0],
-            mode="markers",
-            marker=dict(size=12, color=color, line=dict(color="white", width=2)),
-            hovertext=f"<b>{yr} {title}</b><br>{desc}",
-            hoverinfo="text",
-            showlegend=False,
-        ))
-        # Label
-        fig.add_annotation(
-            x=yr, y=yt,
-            text=f"<b>{yr}</b><br>{title}",
-            showarrow=False,
-            font=dict(size=9, color=color),
-            bgcolor="rgba(20,25,45,0.85)",
-            bordercolor=color,
-            borderwidth=1,
-            borderpad=3,
-            align="center",
-        )
-
-    fig.update_layout(
-        template="plotly_dark",
-        height=500,
-        title=f"{company_name} — {'Corporate History Timeline' if lang == 'en' else '기업 역사 타임라인'}",
-        xaxis=dict(showgrid=False, zeroline=False, tickmode="array",
-                   tickvals=years, ticktext=years, tickangle=45),
-        yaxis=dict(visible=False, range=[-1.8, 1.8]),
-        margin=dict(l=0, r=0, t=50, b=60),
-        plot_bgcolor="#0E1117",
-        paper_bgcolor="#0E1117",
-        hovermode="closest",
-    )
-    return fig
-
-# ══════════════════ TAB 6: COMPANY HISTORY TIMELINE ══════════════════
-with tabs[5]:
-    meta = get_company_meta(ticker)
-    history_list = get_company_history(ticker, lang)
-
-    if meta:
-        st.markdown(f"""
-        <div style='background:linear-gradient(135deg,#1E2130,#16213E);border-radius:14px;
-                    padding:20px 28px;margin-bottom:20px;border:1px solid #2E3250;'>
-            <div style='font-size:1.5rem;font-weight:800;color:#FFA500;'>{meta.get("name","")}</div>
-            <div style='color:#B0BEC5;margin-top:6px;font-size:0.9rem;'>
-                {'창업연도' if lang=='ko' else 'Founded'}: <b style='color:#FFFFFF;'>{meta.get("founded","")}</b>
-                &nbsp;|&nbsp;
-                {'창업자' if lang=='ko' else 'Founders'}: <b style='color:#FFFFFF;'>{meta.get("founders","")}</b>
+        scol1, scol2 = st.columns([1, 2])
+        with scol1:
+            st.markdown(f"""
+            <div class='metric-card' style='padding:20px;'>
+                <div class='metric-label'>{T('sentiment')}</div>
+                <div style='font-size:2rem;font-weight:800;color:{sent_color};'>{sent_label}</div>
+                <div style='color:#8B9DB0;font-size:0.85rem;margin-top:4px;'>Score: {sentiment['score']:.0f}/100</div>
             </div>
-        </div>
-        """, unsafe_allow_html=True)
+            """, unsafe_allow_html=True)
+        with scol2:
+            # Company description
+            desc = info.get("longBusinessSummary", "")
+            if desc:
+                st.markdown(f"<div class='summary-box'>{desc[:400]}{'...' if len(desc)>400 else ''}</div>", unsafe_allow_html=True)
 
-        if history_list:
-            st.plotly_chart(
-                build_history_timeline(history_list, meta.get("name", ticker), lang),
-                use_container_width=True,
-            )
-            st.markdown(f"<div class='section-header'>{'Key Milestones' if lang=='en' else '주요 이정표 상세'}</div>", unsafe_allow_html=True)
-            n_cols = 3
-            for i in range(0, len(history_list), n_cols):
-                row = history_list[i:i+n_cols]
-                cols_h = st.columns(n_cols)
-                for col_h, (yr, title, desc) in zip(cols_h, row):
-                    with col_h:
+        # Macro indicators
+        st.markdown(f"<div class='section-header'>{T('macro_indicators')}</div>", unsafe_allow_html=True)
+        st.plotly_chart(build_macro_chart(macro_data, lang), use_container_width=True)
+
+    # ══════════════════ TAB 2: PREDICTION ══════════════════
+    with tabs[1]:
+        st.markdown(f"<div class='section-header'>{T('pred_title')}</div>", unsafe_allow_html=True)
+        st.markdown(f"<small style='color:#8B9DB0;'>{T('forecast_disclaimer')}</small>", unsafe_allow_html=True)
+
+        horizons = [63, 126, 189, 252]  # trading days
+        horizon_labels = [T("pred_3m"), T("pred_6m"), T("pred_9m"), T("pred_12m")]
+
+        with st.spinner(T("loading")):
+            predictions = predict_prices(df_5y, horizons)
+
+        if predictions:
+            # Forecast chart
+            st.plotly_chart(build_forecast_chart(ticker, df_5y, predictions, lang), use_container_width=True)
+
+            # Prediction cards
+            st.markdown("<br>", unsafe_allow_html=True)
+            pred_cols = st.columns(4)
+            for col, h, label in zip(pred_cols, horizons, horizon_labels):
+                if h in predictions:
+                    p = predictions[h]
+                    chg = p["change_pct"]
+                    chg_color = "#FF4040" if chg >= 0 else "#4488FF"
+                    chg_arrow = "▲" if chg >= 0 else "▼"
+                    col.markdown(f"""
+                    <div class='prediction-card'>
+                        <div class='pred-horizon'>{label}</div>
+                        <div class='pred-price'>${p['base']:,.2f}</div>
+                        <div style='color:{chg_color};font-size:1rem;font-weight:600;'>{chg_arrow} {abs(chg):.1f}%</div>
+                        <div style='margin-top:10px;padding-top:10px;border-top:1px solid #2E3250;'>
+                            <div style='color:#FF4040;font-size:0.8rem;'>▲ {gl("Bull Case", T("pred_bull"))}: ${p['bull']:,.2f}</div>
+                            <div style='color:#4488FF;font-size:0.8rem;'>▼ {gl("Bear Case", T("pred_bear"))}: ${p['bear']:,.2f}</div>
+                        </div>
+                        <div style='margin-top:8px;color:#8B9DB0;font-size:0.75rem;'>
+                            {gl("Volatility (Annualized)", T("volatility"))}: {p['vol_annual']:.1f}%
+                        </div>
+                    </div>
+                    """, unsafe_allow_html=True)
+
+            # Prediction methodology note
+            st.markdown("<br>", unsafe_allow_html=True)
+            if lang == "ko":
+                methodology = """
+                **예측 방법론:** 3가지 통계 모델의 앙상블을 사용합니다:
+                - **선형 추세 회귀**: 장기 가격 추세 포착
+                - **지수 가중 모멘텀**: 최근 수익률에 더 높은 가중치 부여
+                - **평균 회귀 모델**: 200일 이동평균 대비 과도한 편차 조정
+                - **신뢰 구간**: 역사적 변동성을 기반으로 강세/약세 시나리오 계산 (90% 신뢰구간)
+                """
+            else:
+                methodology = """
+                **Prediction Methodology:** Ensemble of 3 statistical models:
+                - **Linear Trend Regression**: Captures long-term price trajectory
+                - **Exponential Weighted Momentum**: Higher weight on recent returns
+                - **Mean Reversion Model**: Adjusts for excessive deviation from 200-day MA
+                - **Confidence Bands**: Bull/Bear scenarios based on historical volatility (90% CI)
+                """
+            st.info(methodology)
+        else:
+            st.warning("Insufficient data for prediction. Need at least 60 trading days.")
+
+    # ══════════════════ TAB 3: NEWS ══════════════════
+    with tabs[2]:
+        col_title, col_trans, col_update = st.columns([3, 1, 1])
+        with col_title:
+            st.markdown(f"<div class='section-header'>{T('news_title')}</div>", unsafe_allow_html=True)
+        with col_trans:
+            trans_label = ("🌐 영어로 보기" if st.session_state.news_translated else "🌐 한글 번역") if lang == "ko" else ("🌐 Show English" if st.session_state.news_translated else "🌐 한글 번역")
+            if st.button(trans_label, use_container_width=True):
+                st.session_state.news_translated = not st.session_state.news_translated
+                st.rerun()
+        with col_update:
+            if st.button("🔄 " + ("새로고침" if lang == "ko" else "Refresh"), use_container_width=True):
+                st.cache_data.clear()
+                st.rerun()
+
+        now_str = datetime.now().strftime("%Y-%m-%d %H:%M")
+        st.markdown(f"<span class='update-badge'>🟢 {T('last_updated')}: {now_str} UTC</span>", unsafe_allow_html=True)
+        if st.session_state.news_translated:
+            st.markdown("<span class='update-badge' style='background:#1E3A5F;color:#64B5F6;margin-left:8px;'>🌐 한글 번역 중</span>", unsafe_allow_html=True)
+        st.markdown("<br>", unsafe_allow_html=True)
+
+        with st.spinner(T("news_loading")):
+            articles = fetch_news(lang)
+
+        if articles:
+            # Filter by ticker if not index
+            relevant = []
+            other = []
+            for art in articles:
+                title_lower = art["title"].lower()
+                ticker_lower = ticker.lower().replace("^", "").replace("=f", "")
+                company_lower = company_name.lower()
+                is_relevant = (
+                    ticker_lower in title_lower
+                    or any(w in title_lower for w in company_lower.split()[:2])
+                    or any(w in title_lower for w in ["market", "stock", "fed", "rate", "inflation",
+                                                        "gdp", "economy", "wall street", "s&p", "nasdaq",
+                                                        "dow", "시장", "주식", "연준", "금리"])
+                )
+                if is_relevant:
+                    relevant.append(art)
+                else:
+                    other.append(art)
+
+            all_arts = relevant + other
+
+            # Display news in grid
+            n_cols = 2
+            for i in range(0, min(len(all_arts), 20), n_cols):
+                row_arts = all_arts[i:i+n_cols]
+                cols = st.columns(n_cols)
+                for col, art in zip(cols, row_arts):
+                    with col:
+                        title_text = art["title"]
+                        summary_text = art["summary"]
+                        if st.session_state.news_translated:
+                            with st.spinner("번역 중..."):
+                                title_text = translate_to_korean(title_text)
+                                summary_text = translate_to_korean(summary_text)
                         st.markdown(f"""
-                        <div style='background:#1E2130;border-left:3px solid #FFA500;
-                                    border-radius:8px;padding:12px 14px;margin-bottom:10px;min-height:100px;'>
-                            <div style='color:#FFA500;font-size:1rem;font-weight:700;'>{yr}</div>
-                            <div style='color:#FFFFFF;font-size:0.88rem;font-weight:600;margin:4px 0;'>{title}</div>
-                            <div style='color:#B0BEC5;font-size:0.78rem;line-height:1.5;'>{desc}</div>
+                        <div class='news-card'>
+                            <div class='news-title'><a href='{art['link']}' target='_blank' style='color:#EAEAEA;text-decoration:none;'>{title_text}</a></div>
+                            <div class='news-meta'>📡 {art['source']} &nbsp;|&nbsp; 🕐 {art['published'][:20] if art['published'] else 'N/A'}</div>
+                            <div class='news-summary'>{summary_text}</div>
                         </div>
                         """, unsafe_allow_html=True)
         else:
-            st.info("이 기업의 상세 역사 데이터가 준비 중입니다. AAPL, MSFT, NVDA, TSLA는 지원됩니다." if lang=="ko"
-                    else "Detailed history not yet available. Try AAPL, MSFT, NVDA, or TSLA.")
-    else:
-        desc_text = info.get("longBusinessSummary","")
-        if desc_text:
-            st.markdown(f"<div class='summary-box'>{desc_text}</div>", unsafe_allow_html=True)
-        facts = [
-            ("Sector" if lang=="en" else "섹터", info.get("sector","N/A")),
-            ("Industry" if lang=="en" else "업종", info.get("industry","N/A")),
-            ("Country" if lang=="en" else "국가", info.get("country","N/A")),
-            ("Employees" if lang=="en" else "임직원", f"{info.get('fullTimeEmployees',0):,}" if info.get("fullTimeEmployees") else "N/A"),
+            st.warning("Could not load news. Check your internet connection." if lang == "en" else "뉴스를 불러올 수 없습니다. 인터넷 연결을 확인하세요.")
+
+    # ══════════════════ TAB 4: GEOPOLITICAL ══════════════════
+    with tabs[3]:
+        _geo_hdr_col, _geo_btn_col = st.columns([4, 1])
+        with _geo_hdr_col:
+            st.markdown(f"<div class='section-header'>{T('geo_title')}</div>", unsafe_allow_html=True)
+        with _geo_btn_col:
+            _geo_btn_label = ("🌐 영어로 보기" if st.session_state.geo_translated else "🌐 한글 번역") if lang == "en" else ("🌐 영어로 보기" if st.session_state.geo_translated else "🌐 한글 번역")
+            if st.button(_geo_btn_label, key="geo_trans_btn", use_container_width=True):
+                st.session_state.geo_translated = not st.session_state.geo_translated
+                st.rerun()
+
+        # Current macro metrics
+        gcol1, gcol2, gcol3, gcol4, gcol5 = st.columns(5)
+        macro_display = [
+            (gl("VIX (공포지수)" if lang == "ko" else "VIX", T("geo_vix")), "VIX", "#FF4B4B"),
+            (gl("WTI 원유" if lang == "ko" else "WTI", T("geo_oil")), "Oil (WTI)", "#FFA500"),
+            (gl("금" if lang == "ko" else "Gold", T("geo_gold")), "Gold", "#FFD700"),
+            (gl("달러 인덱스 (DXY)" if lang == "ko" else "USD Index (DXY)", T("geo_dxy")), "USD Index", "#64B5F6"),
+            (gl("미국채 10년 수익률" if lang == "ko" else "10Y Treasury", T("geo_bonds")), "10Y Treasury", "#AB63FA"),
         ]
-        fa, fb = st.columns(2)
-        for j, (k, v) in enumerate(facts):
-            (fa if j%2==0 else fb).markdown(f"""
-            <div class='metric-card' style='text-align:left;padding:12px 16px;'>
-                <span style='color:#8B9DB0;font-size:0.8rem;'>{k}</span><br>
-                <span style='color:#FFFFFF;font-weight:600;'>{v}</span>
-            </div>""", unsafe_allow_html=True)
-        st.info("📌 " + ("AAPL·MSFT·NVDA·TSLA 검색 시 상세 역사 타임라인을 볼 수 있습니다." if lang=="ko"
-                          else "Search AAPL, MSFT, NVDA, or TSLA for full history timeline."))
+        for col, (label, key, color) in zip([gcol1, gcol2, gcol3, gcol4, gcol5], macro_display):
+            data = macro_data.get(key, {})
+            val = data.get("current", 0)
+            chg = data.get("change_pct", 0)
+            chg_color = "#FF4040" if chg >= 0 else "#4488FF"
+            col.markdown(f"""
+            <div class='metric-card'>
+                <div class='metric-label'>{label}</div>
+                <div style='font-size:1.2rem;font-weight:700;color:{color};'>{val:,.2f}</div>
+                <div style='color:{chg_color};font-size:0.85rem;'>{chg:+.2f}%</div>
+            </div>
+            """, unsafe_allow_html=True)
 
-# ══════════════════ TAB 7: RELATIONSHIPS ══════════════════
-with tabs[6]:
-    st.markdown(f"<div class='section-header'>{'Corporate Relationships & Dependencies' if lang=='en' else '기업 이해관계 및 의존성 분석'}</div>",
-                unsafe_allow_html=True)
-    relations = get_company_relations(ticker)
+        st.markdown("<br>", unsafe_allow_html=True)
 
-    if relations:
-        suffix = "_ko" if lang=="ko" else "_en"
-        rel_tabs = st.tabs([
-            "🏭 " + ("Suppliers" if lang=="en" else "공급망·협력사"),
-            "⚔️ " + ("Competitors" if lang=="en" else "경쟁사"),
-            "👥 " + ("Customers" if lang=="en" else "주요 고객"),
-            "⛏️ " + ("Resources" if lang=="en" else "핵심 자원·원자재"),
-            "🏢 " + ("Subsidiaries" if lang=="en" else "자회사·인수기업"),
-        ])
-        with rel_tabs[0]:
-            for sup_name, role, importance, color in relations.get("suppliers"+suffix, []):
-                imp_width = {"Critical":100,"핵심":100,"High":75,"높음":75,"Medium":50,"중간":50,"Low":25,"낮음":25,"Historical":15,"과거":15}
-                w = imp_width.get(importance, 50)
-                _clean = sup_name.split("(")[0].strip()
-                _sym = resolve_ticker(_clean)
-                _btn_key = f"rel_sup_{ticker}_{sup_name[:20]}"
-                if st.button(f"📈 {sup_name}", key=_btn_key, use_container_width=True):
-                    st.session_state.ticker = _sym
-                    st.session_state.sidebar_view = None
-                    st.rerun()
+        # Risk factors
+        st.markdown(f"<div class='section-header'>{T('geo_factors')}</div>", unsafe_allow_html=True)
+
+        risk_factors_ko = [
+            ("🇺🇸🇨🇳 미-중 무역 갈등", "높음", "트럼프 관세 145% 부과 → 반도체·기술주 압박, 공급망 재편 가속화", "high_risk"),
+            ("🏦 연준(Fed) 통화정책", "중간", "2025년 금리 동결 기조 유지, 연내 1-2회 인하 가능성 → 성장주 긍정적", "med_risk"),
+            ("🛢️ 중동 지정학 리스크", "중간", "이란-이스라엘 긴장 지속, WTI 가격 변동성 에너지 섹터 영향", "med_risk"),
+            ("🇷🇺🇺🇦 러시아-우크라이나", "중간", "전쟁 장기화, 유럽 에너지 공급 불안 지속, 방산주 수혜", "med_risk"),
+            ("💹 AI 과열 논쟁", "낮음", "엔비디아 등 AI 밸류에이션 논란, 실적 기반 검증 국면 진입", "low_risk"),
+            ("📉 미국 국가부채", "중간", "35조 달러 돌파, 재정 적자 지속 → 장기 금리 상승 압력", "med_risk"),
+        ]
+        risk_factors_en = [
+            ("🇺🇸🇨🇳 US-China Trade War", "HIGH", "Trump 145% tariffs → Tech/semiconductor pressure, supply chain restructuring", "high_risk"),
+            ("🏦 Fed Monetary Policy", "MEDIUM", "Rate hold in 2025, 1-2 cuts possible → Positive for growth stocks", "med_risk"),
+            ("🛢️ Middle East Tensions", "MEDIUM", "Iran-Israel tensions persist, WTI oil price volatility impacts energy sector", "med_risk"),
+            ("🇷🇺🇺🇦 Russia-Ukraine War", "MEDIUM", "Prolonged conflict, EU energy supply uncertainty, defense stocks benefit", "med_risk"),
+            ("💹 AI Bubble Concerns", "LOW", "NVIDIA etc. valuation debate, entering earnings-validation phase", "low_risk"),
+            ("📉 US National Debt", "MEDIUM", "$35T+ debt, fiscal deficit → Long-term rate upward pressure", "med_risk"),
+        ]
+
+        if st.session_state.geo_translated:
+            # When translated: always show Korean
+            risk_factors = risk_factors_ko
+        else:
+            risk_factors = risk_factors_ko if lang == "ko" else risk_factors_en
+        risk_labels = {
+            "high_risk": (T("high_risk"), "risk-high"),
+            "med_risk": (T("med_risk"), "risk-med"),
+            "low_risk": (T("low_risk"), "risk-low"),
+        }
+
+        rf_col1, rf_col2 = st.columns(2)
+        for i, (title, risk_key, desc, risk_type) in enumerate(risk_factors):
+            risk_text, risk_class = risk_labels[risk_type]
+            target_col = rf_col1 if i % 2 == 0 else rf_col2
+            with target_col:
                 st.markdown(f"""
-                <div style='background:#1A1F35;border-radius:10px;padding:14px 18px;margin:-8px 0 10px 0;border:1px solid {color}40;'>
+                <div class='geo-card'>
                     <div style='display:flex;justify-content:space-between;align-items:center;'>
-                        <span style='font-weight:700;color:#FFFFFF;'>🏭 {sup_name}</span>
-                        <span style='color:{color};font-weight:700;background:{color}20;padding:2px 10px;border-radius:12px;font-size:0.8rem;'>{importance}</span>
+                        <span style='font-weight:700;color:#EAEAEA;font-size:0.95rem;'>{title}</span>
+                        <span class='{risk_class}'>[{risk_text}]</span>
                     </div>
-                    <div style='color:#B0BEC5;font-size:0.82rem;margin:6px 0 8px 0;'>{role}</div>
-                    <div style='background:#0D1120;border-radius:4px;height:6px;'>
-                        <div style='background:{color};width:{w}%;height:6px;border-radius:4px;'></div>
-                    </div>
+                    <div style='color:#B0BEC5;font-size:0.82rem;margin-top:6px;'>{desc}</div>
+                </div>
+                """, unsafe_allow_html=True)
+
+        st.markdown("<br>", unsafe_allow_html=True)
+
+        # Historical geopolitical events chart
+        st.plotly_chart(build_geo_timeline(lang), use_container_width=True)
+
+        # Correlation explanation
+        st.markdown(f"<div class='section-header'>{T('market_correlation')}</div>", unsafe_allow_html=True)
+        corr_data_ko = {
+            "이벤트 유형": ["금리 인상 사이클", "지정학 전쟁", "팬데믹/보건위기", "무역 전쟁", "AI/기술 붐", "금융위기"],
+            "평균 초기 충격": ["-15%", "-10%", "-34%", "-12%", "+40%", "-50%"],
+            "회복 기간": ["12-18개월", "3-6개월", "12개월", "6-12개월", "지속 상승", "24-36개월"],
+            "수혜 섹터": ["금융, 에너지", "방산, 에너지", "바이오, 기술", "소재, 국내소비", "기술, 반도체", "헬스케어, 필수소비재"],
+        }
+        corr_data_en = {
+            "Event Type": ["Rate Hike Cycle", "Geopolitical War", "Pandemic/Health Crisis", "Trade War", "AI/Tech Boom", "Financial Crisis"],
+            "Avg Initial Shock": ["-15%", "-10%", "-34%", "-12%", "+40%", "-50%"],
+            "Recovery Period": ["12-18 months", "3-6 months", "12 months", "6-12 months", "Sustained Rally", "24-36 months"],
+            "Beneficiary Sectors": ["Finance, Energy", "Defense, Energy", "Biotech, Tech", "Materials, Domestic", "Tech, Semiconductors", "Healthcare, Staples"],
+        }
+        corr_df = pd.DataFrame(corr_data_ko if lang == "ko" else corr_data_en)
+        st.dataframe(corr_df, use_container_width=True, hide_index=True)
+
+    # ══════════════════ TAB 5: HISTORY ══════════════════
+    with tabs[4]:
+        st.markdown(f"<div class='section-header'>{T('hist_title')}</div>", unsafe_allow_html=True)
+
+        # 2-line summary
+        st.markdown(f"**{T('summary_analysis')}**")
+        summary = generate_2line_summary(ticker, df_max, info, lang)
+        if summary:
+            st.markdown(f"<div class='summary-box'>{summary}</div>", unsafe_allow_html=True)
+
+        st.markdown("<br>", unsafe_allow_html=True)
+
+        # Long-term price chart with events overlay
+        if not df_max.empty:
+            close_max = df_max["Close"]
+            if close_max.ndim == 2:
+                close_max = close_max.iloc[:, 0]
+
+            fig_hist = go.Figure()
+            fig_hist.add_trace(go.Scatter(
+                x=df_max.index,
+                y=close_max.astype(float),
+                name=company_name,
+                fill="tozeroy",
+                fillcolor="rgba(0,212,170,0.08)",
+                line=dict(color="#00D4AA", width=1.5),
+            ))
+
+            # Overlay geopolitical events — vertical text, no rotation
+            price_max = float(close_max.max())
+            for idx_e, event in enumerate(GEOPOLITICAL_EVENTS):
+                try:
+                    event_date = pd.Timestamp(event["date"] + "-01")
+                    if event_date >= df_max.index[0] and event_date <= df_max.index[-1]:
+                        raw_label = event[f"event_{lang}"].split("→")[0].strip()
+                        # Build top-to-bottom text: each character on its own line
+                        vertical_text = "<br>".join(list(raw_label))
+                        color = "#4488FF" if event["impact"] < 0 else "#FF4040"
+                        # Alternate y positions to prevent overlap
+                        y_pos = price_max * (0.92 - (idx_e % 3) * 0.10)
+                        fig_hist.add_vline(
+                            x=event_date, line_dash="dot",
+                            line_color=color, line_width=1.5, opacity=0.6,
+                        )
+                        fig_hist.add_annotation(
+                            x=event_date,
+                            y=y_pos,
+                            text=vertical_text,
+                            showarrow=False,
+                            textangle=0,
+                            font=dict(size=8, color=color, family="monospace"),
+                            bgcolor="rgba(14,17,23,0.75)",
+                            bordercolor=color,
+                            borderwidth=1,
+                            borderpad=2,
+                            align="center",
+                            xanchor="center",
+                            yanchor="top",
+                        )
+                except Exception:
+                    continue
+
+            fig_hist.update_layout(
+                template="plotly_dark",
+                height=580,
+                title=f"{company_name} — {'Full History with Key Events' if lang == 'en' else '전체 역사 & 주요 이벤트'}",
+                xaxis=dict(
+                    rangeselector=_rangeselector(lang),
+                    rangeslider=dict(visible=False),
+                    type="date",
+                    title="Date" if lang == "en" else "날짜",
+                ),
+                yaxis_title="Price (USD)" if lang == "en" else "주가 (USD)",
+                margin=dict(l=0, r=0, t=70, b=0),
+                plot_bgcolor="#0E1117",
+                paper_bgcolor="#0E1117",
+            )
+            st.plotly_chart(fig_hist, use_container_width=True)
+
+        # Annual returns table
+        st.markdown(f"<div class='section-header'>{'Annual Returns' if lang == 'en' else '연도별 수익률'}</div>", unsafe_allow_html=True)
+
+        if not df_max.empty:
+            close_max = df_max["Close"]
+            if close_max.ndim == 2:
+                close_max = close_max.iloc[:, 0]
+            close_max = close_max.astype(float)
+
+            annual_data = []
+            df_yearly = close_max.resample("YE").last()
+            for i in range(1, len(df_yearly)):
+                year = df_yearly.index[i].year
+                ret = (df_yearly.iloc[i] / df_yearly.iloc[i - 1] - 1) * 100
+                annual_data.append({
+                    ("Year" if lang == "en" else "연도"): year,
+                    ("Return" if lang == "en" else "수익률"): f"{ret:+.1f}%",
+                    ("Price" if lang == "en" else "종가"): f"${df_yearly.iloc[i]:,.2f}",
+                    ("Performance" if lang == "en" else "성과"): "🟢 상승" if ret > 0 else "🔴 하락",
+                })
+
+            if annual_data:
+                df_annual = pd.DataFrame(annual_data).tail(15)
+                st.dataframe(df_annual, use_container_width=True, hide_index=True)
+
+    # ══════════════════ TAB 6 + 7 RENDERED BELOW AFTER DB DEFINITIONS ══════════════════
+    # (see end of file after DB defs)
+
+    # ══════════════════ TAB 6: COMPANY HISTORY DB ══════════════════
+    COMPANY_HISTORY_DB = {
+        "AAPL": {
+            "name": "Apple Inc.",
+            "founded": "1976",
+            "founders": "Steve Jobs, Steve Wozniak, Ronald Wayne",
+            "en": [
+                ("1976", "🍎 Founded", "Apple Computer Co. founded in Jobs' garage. First product: Apple I personal computer."),
+                ("1980", "📈 IPO", "Apple goes public at $22/share. Biggest US IPO since Ford Motor in 1956."),
+                ("1984", "💻 Macintosh", "Iconic '1984' Super Bowl ad. First mass-market GUI computer launched."),
+                ("1985", "🚪 Jobs Exits", "Steve Jobs forced out by board. Company struggles through late 80s/90s."),
+                ("1997", "🔄 Jobs Returns", "Apple acquires NeXT for $429M, bringing Jobs back. Company near bankruptcy."),
+                ("1998", "🖥️ iMac", "Colorful all-in-one iMac launches. Design-led revival begins."),
+                ("2001", "🎵 iPod + iTunes", "iPod changes the music industry. iTunes Store follows in 2003."),
+                ("2007", "📱 iPhone", "Steve Jobs unveils iPhone. Smartphone revolution begins."),
+                ("2008", "📲 App Store", "App Store launches with 500 apps. Transforms software distribution."),
+                ("2010", "📺 iPad", "iPad creates the modern tablet category."),
+                ("2011", "💔 Jobs Passes", "Steve Jobs passes away. Tim Cook becomes CEO."),
+                ("2014", "⌚ Apple Watch", "Wearables division begins. Watch + Health ecosystem expands."),
+                ("2016", "🔧 Services Era", "Services (iCloud, Apple Music, App Store) become key revenue driver."),
+                ("2020", "💰 $2T Valuation", "First US company to reach $2 trillion market cap."),
+                ("2021", "🔬 Apple Silicon", "M1 chip — Apple's own ARM-based processor. Breaks Intel dependency."),
+                ("2023", "🥽 Vision Pro", "Apple Vision Pro spatial computing headset announced at $3,499."),
+                ("2024", "🤖 Apple Intelligence", "On-device AI features. Partnership with OpenAI for Siri enhancement."),
+            ],
+            "ko": [
+                ("1976", "🍎 창업", "잡스의 차고에서 애플컴퓨터 설립. 첫 제품: Apple I 개인용 컴퓨터."),
+                ("1980", "📈 상장", "주당 22달러로 IPO. 포드모터 이후 최대 규모 미국 IPO."),
+                ("1984", "💻 매킨토시", "전설적인 '1984' 슈퍼볼 광고. 최초 대중용 GUI 컴퓨터 출시."),
+                ("1985", "🚪 잡스 퇴출", "이사회에 의해 잡스 축출. 80-90년대 암흑기 시작."),
+                ("1997", "🔄 잡스 복귀", "NeXT 4억2900만 달러에 인수하며 잡스 복귀. 회사는 파산 위기."),
+                ("1998", "🖥️ iMac", "컬러풀한 일체형 iMac 출시. 디자인 중심 부활의 시작."),
+                ("2001", "🎵 iPod + iTunes", "iPod으로 음악 산업 판도 변경. 2003년 iTunes 스토어 오픈."),
+                ("2007", "📱 아이폰", "스티브 잡스 아이폰 공개. 스마트폰 혁명 시작."),
+                ("2008", "📲 앱스토어", "500개 앱으로 앱스토어 오픈. 소프트웨어 유통 혁신."),
+                ("2010", "📺 아이패드", "현대적 태블릿 카테고리 창조."),
+                ("2011", "💔 잡스 별세", "스티브 잡스 별세. 팀 쿡 CEO 취임."),
+                ("2014", "⌚ 애플워치", "웨어러블 사업부 시작. 건강 생태계 확장."),
+                ("2016", "🔧 서비스 시대", "iCloud·애플뮤직·앱스토어 등 서비스가 핵심 수익원으로."),
+                ("2020", "💰 시총 2조 달러", "미국 최초 시가총액 2조 달러 돌파."),
+                ("2021", "🔬 애플 실리콘", "자체 ARM 기반 M1 칩 출시. 인텔 의존도 탈피."),
+                ("2023", "🥽 비전 프로", "공간 컴퓨팅 헤드셋 애플 비전 프로 3499달러에 발표."),
+                ("2024", "🤖 애플 인텔리전스", "온디바이스 AI 기능. OpenAI와 파트너십으로 시리 강화."),
+            ],
+        },
+        "MSFT": {
+            "name": "Microsoft Corporation",
+            "founded": "1975",
+            "founders": "Bill Gates, Paul Allen",
+            "en": [
+                ("1975", "🖥️ Founded", "Gates and Allen found Microsoft in Albuquerque, NM. First product: BASIC interpreter for Altair 8800."),
+                ("1981", "💾 MS-DOS", "IBM licenses MS-DOS for its PC. Microsoft retains rights — pivotal decision."),
+                ("1985", "🪟 Windows 1.0", "First Windows OS launched. GUI interface for IBM-compatible PCs."),
+                ("1986", "📈 IPO", "Microsoft goes public at $21/share. Gates becomes a billionaire at 31."),
+                ("1990", "📦 Office Suite", "Microsoft Office (Word+Excel+PowerPoint) bundles become dominant."),
+                ("1995", "🌐 Windows 95 + IE", "Windows 95 massive launch. Internet Explorer bundled — browser wars begin."),
+                ("2000", "⚖️ Antitrust", "DOJ antitrust case. Judge orders breakup (overturned on appeal). Stock peaks."),
+                ("2001", "🎮 Xbox", "Xbox console launched, entering gaming market against Sony PlayStation."),
+                ("2008", "☁️ Azure", "Microsoft Azure cloud platform launches. Cloud-first pivot begins."),
+                ("2014", "🔄 Nadella CEO", "Satya Nadella becomes CEO. Open-source pivot, cloud-first strategy."),
+                ("2016", "💼 LinkedIn $26B", "Acquires LinkedIn for $26.2 billion."),
+                ("2018", "🐙 GitHub $7.5B", "Acquires GitHub for $7.5 billion. Developer community trust rebuilt."),
+                ("2020", "🎮 Activision Deal", "Gaming push: $68.7B Activision Blizzard deal announced (closed 2023)."),
+                ("2023", "🤖 OpenAI $10B", "$10B investment in OpenAI. Copilot AI integrated across all products."),
+                ("2024", "👑 $3T Valuation", "Briefly surpasses Apple as world's most valuable company at $3T+."),
+            ],
+            "ko": [
+                ("1975", "🖥️ 창업", "게이츠와 앨런, 뉴멕시코 주 앨버커키에서 마이크로소프트 설립. 첫 제품: Altair 8800용 BASIC 인터프리터."),
+                ("1981", "💾 MS-DOS", "IBM이 MS-DOS 라이선스 취득. MS는 권리 보유 — 역사적 결정."),
+                ("1985", "🪟 윈도우 1.0", "첫 윈도우 OS 출시. IBM 호환 PC용 GUI 인터페이스."),
+                ("1986", "📈 상장", "주당 21달러 IPO. 게이츠, 31세에 억만장자."),
+                ("1990", "📦 오피스 제품군", "마이크로소프트 오피스(워드+엑셀+파워포인트) 번들이 시장 지배."),
+                ("1995", "🌐 윈도우95 + IE", "윈도우95 대대적 출시. IE 번들 — 브라우저 전쟁 시작."),
+                ("2000", "⚖️ 독점금지 소송", "DOJ 반독점 소송. 분할 명령(항소심 취소). 주가 고점."),
+                ("2001", "🎮 엑스박스", "엑스박스 콘솔 출시. 소니 플레이스테이션과 게임 시장 경쟁."),
+                ("2008", "☁️ 애저", "마이크로소프트 애저 클라우드 플랫폼 출시. 클라우드 전환 시작."),
+                ("2014", "🔄 나델라 CEO", "사티아 나델라 CEO 취임. 오픈소스 전환, 클라우드 퍼스트 전략."),
+                ("2016", "💼 링크드인 260억불", "링크드인 262억 달러에 인수."),
+                ("2018", "🐙 깃허브 75억불", "깃허브 75억 달러에 인수. 개발자 커뮤니티 신뢰 회복."),
+                ("2020", "🎮 액티비전", "게임 강화: 687억 달러 액티비전블리자드 인수 발표 (2023년 완료)."),
+                ("2023", "🤖 오픈AI 100억불", "오픈AI 100억 달러 투자. 코파일럿 AI 전 제품 통합."),
+                ("2024", "👑 시총 3조 달러", "잠시 애플 제치고 세계 최고 시총 3조 달러+ 달성."),
+            ],
+        },
+        "NVDA": {
+            "name": "NVIDIA Corporation",
+            "founded": "1993",
+            "founders": "Jensen Huang, Chris Malachowsky, Curtis Priem",
+            "en": [
+                ("1993", "🟩 Founded", "Jensen Huang, Chris Malachowsky, and Curtis Priem found NVIDIA in Sunnyvale, CA."),
+                ("1995", "🎮 NV1 GPU", "First product NV1 launched. Early 3D graphics for gaming."),
+                ("1999", "💎 GeForce 256", "Coined term 'GPU'. GeForce 256 is world's first GPU. Nvidia goes public."),
+                ("2006", "⚡ CUDA", "CUDA parallel computing platform launched. Unlocks GPU for general computing beyond graphics."),
+                ("2012", "🧠 AlexNet Moment", "Deep learning breakthrough — AlexNet trained on NVIDIA GPUs wins ImageNet. AI era begins."),
+                ("2016", "🚗 Autonomous Driving", "NVIDIA Drive PX platform for self-driving cars. Partners with Tesla, Toyota."),
+                ("2018", "🔬 RTX Ray Tracing", "RTX 20 series — real-time ray tracing for photorealistic gaming graphics."),
+                ("2019", "🔴 Mellanox $6.9B", "Acquires Mellanox for $6.9B. Enters data center networking."),
+                ("2020", "💰 ARM Deal", "$40B Arm acquisition announced (blocked by regulators in 2022)."),
+                ("2022", "🤖 ChatGPT Era", "ChatGPT launches. H100 GPU demand explodes. Nvidia supply shortages begin."),
+                ("2023", "🚀 $1T Club", "Joins $1 trillion market cap club. H100 becomes the 'gold of AI'."),
+                ("2024", "👑 #1 Most Valuable", "Briefly becomes world's most valuable company. Blackwell B200 GPU announced."),
+                ("2025", "🌐 Sovereign AI", "Nations building AI infrastructure — NVIDIA at center of global AI arms race."),
+            ],
+            "ko": [
+                ("1993", "🟩 창업", "젠슨 황, 크리스 말라초프스키, 커티스 프리엠이 캘리포니아 서니베일에서 엔비디아 설립."),
+                ("1995", "🎮 NV1 GPU", "첫 제품 NV1 출시. 게임용 초기 3D 그래픽."),
+                ("1999", "💎 지포스 256", "'GPU' 용어 창안. 지포스 256은 세계 최초 GPU. 나스닥 상장."),
+                ("2006", "⚡ CUDA", "CUDA 병렬 컴퓨팅 플랫폼 출시. 그래픽 외 범용 컴퓨팅으로 GPU 영역 확장."),
+                ("2012", "🧠 알렉스넷 모멘트", "딥러닝 혁신 — 알렉스넷이 NVIDIA GPU로 훈련하여 ImageNet 우승. AI 시대 시작."),
+                ("2016", "🚗 자율주행", "자율주행용 NVIDIA Drive PX 플랫폼. 테슬라·토요타와 파트너십."),
+                ("2018", "🔬 RTX 레이트레이싱", "RTX 20 시리즈 — 사실적 게임 그래픽용 실시간 레이트레이싱."),
+                ("2019", "🔴 멜라녹스 69억불", "멜라녹스 69억 달러 인수. 데이터센터 네트워킹 진출."),
+                ("2020", "💰 ARM 인수 시도", "400억 달러 ARM 인수 발표 (규제 당국에 의해 2022년 무산)."),
+                ("2022", "🤖 챗GPT 시대", "챗GPT 출시. H100 GPU 수요 폭발. 엔비디아 공급 부족 시작."),
+                ("2023", "🚀 시총 1조 달러", "시가총액 1조 달러 클럽 합류. H100은 'AI의 금'으로 불림."),
+                ("2024", "👑 세계 1위 기업", "잠시 세계 최고 시가총액 기업 등극. 블랙웰 B200 GPU 발표."),
+                ("2025", "🌐 소버린 AI", "각국이 AI 인프라 구축 — 엔비디아가 글로벌 AI 군비경쟁의 중심."),
+            ],
+        },
+        "TSLA": {
+            "name": "Tesla, Inc.",
+            "founded": "2003",
+            "founders": "Martin Eberhard, Marc Tarpenning (Elon Musk joined 2004)",
+            "en": [
+                ("2003", "⚡ Founded", "Martin Eberhard and Marc Tarpenning found Tesla Motors in San Carlos, CA."),
+                ("2004", "💼 Musk Invests", "Elon Musk leads Series A funding of $7.5M. Becomes chairman."),
+                ("2008", "🚗 Roadster", "First Tesla Roadster delivered. World's first highway-legal electric sports car. Musk becomes CEO."),
+                ("2010", "📈 IPO", "Tesla IPO at $17/share. First US automaker IPO since Ford in 1956."),
+                ("2012", "🚘 Model S", "Model S sedan launched. Named Motor Trend Car of the Year. Supercharger network begins."),
+                ("2015", "🔋 Powerwall", "Tesla Energy division. Powerwall home battery + utility-scale Powerpack."),
+                ("2016", "🤖 Autopilot", "Autopilot hardware 2.0. Acquires SolarCity for $2.6B."),
+                ("2017", "🏭 Gigafactory 1", "Nevada Gigafactory operational. Battery production at scale begins."),
+                ("2019", "🛻 Cybertruck Reveal", "Cybertruck unveiled. 'Armored glass' incident becomes viral moment."),
+                ("2020", "💰 S&P 500 Entry", "Tesla added to S&P 500. Stock rises 743% in 2020. Joins $1T club briefly."),
+                ("2021", "⚡ 4680 Battery", "Structural battery pack + 4680 cells. New architecture for cost reduction."),
+                ("2022", "🤖 Optimus Robot", "Tesla Bot (Optimus) humanoid robot revealed. AI Day showcase."),
+                ("2023", "📉 Price Wars", "Tesla cuts prices aggressively. Margin pressure. Cybertruck finally delivered."),
+                ("2024", "🚕 Robotaxi", "FSD v12 neural net driving. Robotaxi event showcasing autonomous future."),
+            ],
+            "ko": [
+                ("2003", "⚡ 창업", "마틴 에버하드와 마크 타페닝이 캘리포니아 산카를로스에서 테슬라모터스 설립."),
+                ("2004", "💼 머스크 투자", "일론 머스크가 750만 달러 시리즈A 투자 주도. 이사회 의장 취임."),
+                ("2008", "🚗 로드스터", "첫 테슬라 로드스터 인도. 세계 최초 고속도로 주행 가능 전기 스포츠카. 머스크 CEO."),
+                ("2010", "📈 상장", "주당 17달러 IPO. 1956년 포드 이후 최초 미국 자동차기업 IPO."),
+                ("2012", "🚘 모델 S", "모델 S 세단 출시. 모터트렌드 올해의 차 선정. 슈퍼차저 네트워크 시작."),
+                ("2015", "🔋 파워월", "테슬라 에너지 사업부. 가정용 파워월 + 산업용 파워팩."),
+                ("2016", "🤖 오토파일럿", "오토파일럿 하드웨어 2.0. 26억 달러에 솔라시티 인수."),
+                ("2017", "🏭 기가팩토리 1", "네바다 기가팩토리 가동. 배터리 대량 생산 시작."),
+                ("2019", "🛻 사이버트럭 공개", "사이버트럭 공개. '강화유리' 사고가 바이럴 명장면으로."),
+                ("2020", "💰 S&P 500 편입", "테슬라 S&P 500 편입. 2020년 주가 743% 상승. 잠시 1조 달러 클럽."),
+                ("2021", "⚡ 4680 배터리", "구조용 배터리 팩 + 4680 셀. 원가 절감을 위한 새 아키텍처."),
+                ("2022", "🤖 옵티머스 로봇", "테슬라봇(옵티머스) 인간형 로봇 공개. AI 데이 쇼케이스."),
+                ("2023", "📉 가격 전쟁", "테슬라 공격적 가격 인하. 마진 압박. 사이버트럭 드디어 인도."),
+                ("2024", "🚕 로보택시", "FSD v12 신경망 자율주행. 자율주행 미래 선보이는 로보택시 이벤트."),
+            ],
+        },
+    }
+
+    COMPANY_RELATIONS_DB = {
+        "AAPL": {
+            "suppliers_en": [
+                ("TSMC (Taiwan)", "A-series / M-series chip fabrication", "Critical", "#FF4B4B"),
+                ("Samsung (Korea)", "OLED displays, NAND flash memory", "High", "#FFA500"),
+                ("Foxconn (Taiwan/China)", "iPhone assembly — 70% of production", "Critical", "#FF4B4B"),
+                ("Corning (USA)", "Gorilla Glass for all iPhone screens", "High", "#FFA500"),
+                ("Broadcom (USA)", "Wi-Fi / Bluetooth chips", "Medium", "#FFD700"),
+                ("Murata (Japan)", "Capacitors, wireless components", "Medium", "#FFD700"),
+                ("LG Energy (Korea)", "Battery cells for MacBook / iPad", "Medium", "#FFD700"),
+                ("Skyworks (USA)", "RF chips for cellular connectivity", "Medium", "#FFD700"),
+            ],
+            "competitors_en": [
+                ("Samsung", "Smartphones, tablets, wearables — direct global rival"),
+                ("Google / Alphabet", "Android OS ecosystem, Pixel phones, AI assistant"),
+                ("Microsoft", "PC/laptop market, cloud services (Azure vs iCloud)"),
+                ("Meta", "VR/AR headsets — Vision Pro vs Quest"),
+                ("Spotify", "Music streaming vs Apple Music"),
+                ("Amazon", "Smart home, voice assistant (Alexa vs Siri)"),
+            ],
+            "customers_en": [
+                ("Consumer (Direct)", "~60% revenue — iPhones sold via Apple Store, carriers"),
+                ("Enterprise", "Corporate Mac/iPad deployments, MDM ecosystem"),
+                ("Education", "iPad in Education program — millions of devices"),
+                ("Developers", "App Store ecosystem — 30M+ registered developers"),
+            ],
+            "resources_en": [
+                ("Rare Earth Metals", "Neodymium (magnets), Terbium — sourced from China/Australia"),
+                ("Cobalt", "Battery cathode — primarily DRC (Congo). ESG risk."),
+                ("Aluminum", "MacBook/iPhone chassis — global commodity"),
+                ("Silicon Wafers", "Semiconductor base — TSMC processes"),
+                ("Lithium", "Battery anodes — Chile, Australia sourcing"),
+            ],
+            "subsidiaries_en": [
+                ("Beats Electronics", "Acquired 2014 for $3B — headphones & audio"),
+                ("Shazam", "Acquired 2018 for $400M — music recognition"),
+                ("Intel Modem Division", "Acquired 2019 for $1B — 5G modem tech"),
+                ("AuthenTec", "Acquired 2012 for $356M — Touch ID fingerprint tech"),
+            ],
+            "suppliers_ko": [
+                ("TSMC (대만)", "A시리즈/M시리즈 칩 파운드리", "핵심", "#FF4B4B"),
+                ("삼성 (한국)", "OLED 디스플레이, NAND 플래시 메모리", "높음", "#FFA500"),
+                ("폭스콘 (대만/중국)", "아이폰 조립 — 생산의 70%", "핵심", "#FF4B4B"),
+                ("코닝 (미국)", "전 아이폰 화면용 고릴라 글라스", "높음", "#FFA500"),
+                ("브로드컴 (미국)", "Wi-Fi / 블루투스 칩", "중간", "#FFD700"),
+                ("무라타 (일본)", "커패시터, 무선 부품", "중간", "#FFD700"),
+                ("LG에너지솔루션 (한국)", "맥북/아이패드용 배터리 셀", "중간", "#FFD700"),
+                ("스카이웍스 (미국)", "셀룰러 연결용 RF 칩", "중간", "#FFD700"),
+            ],
+            "competitors_ko": [
+                ("삼성", "스마트폰, 태블릿, 웨어러블 — 직접 글로벌 경쟁자"),
+                ("구글/알파벳", "안드로이드 OS 생태계, 픽셀폰, AI 어시스턴트"),
+                ("마이크로소프트", "PC/노트북 시장, 클라우드 서비스 (애저 vs iCloud)"),
+                ("메타", "VR/AR 헤드셋 — 비전 프로 vs 퀘스트"),
+                ("스포티파이", "음악 스트리밍 vs 애플뮤직"),
+                ("아마존", "스마트홈, 음성 어시스턴트 (알렉사 vs 시리)"),
+            ],
+            "customers_ko": [
+                ("일반 소비자 (직접)", "매출 약 60% — 애플스토어·통신사 통해 아이폰 판매"),
+                ("기업", "법인 맥/아이패드 도입, MDM 생태계"),
+                ("교육기관", "아이패드 교육 프로그램 — 수백만 기기"),
+                ("개발자", "앱스토어 생태계 — 3000만+ 등록 개발자"),
+            ],
+            "resources_ko": [
+                ("희토류 금속", "네오디뮴(자석), 테르븀 — 중국/호주 소싱"),
+                ("코발트", "배터리 양극재 — 주로 DRC(콩고). ESG 리스크."),
+                ("알루미늄", "맥북/아이폰 하우징 — 글로벌 원자재"),
+                ("실리콘 웨이퍼", "반도체 기반 — TSMC 가공"),
+                ("리튬", "배터리 음극재 — 칠레, 호주 소싱"),
+            ],
+            "subsidiaries_ko": [
+                ("비츠 일렉트로닉스", "2014년 30억 달러 인수 — 헤드폰 및 오디오"),
+                ("샤잠", "2018년 4억 달러 인수 — 음악 인식"),
+                ("인텔 모뎀 사업부", "2019년 10억 달러 인수 — 5G 모뎀 기술"),
+                ("오센텍", "2012년 3억5600만 달러 인수 — 터치ID 지문 기술"),
+            ],
+        },
+        "NVDA": {
+            "suppliers_en": [
+                ("TSMC (Taiwan)", "All GPU fabrication — 4nm/3nm nodes", "Critical", "#FF4B4B"),
+                ("Samsung (Korea)", "HBM memory (High Bandwidth Memory) for H100/H200", "Critical", "#FF4B4B"),
+                ("SK Hynix (Korea)", "HBM3E memory for Blackwell B200 GPUs", "Critical", "#FF4B4B"),
+                ("Micron (USA)", "GDDR6X memory for consumer GPUs", "High", "#FFA500"),
+                ("ASE Group (Taiwan)", "Advanced chip packaging / CoWoS", "High", "#FFA500"),
+                ("Synopsys / Cadence (USA)", "EDA tools for chip design", "Medium", "#FFD700"),
+            ],
+            "competitors_en": [
+                ("AMD", "MI300X GPUs — main AI competitor. 'The #2 AI chip'"),
+                ("Intel", "Gaudi 3 AI accelerators. Battling for data center"),
+                ("Google (TPU)", "Custom TPUs power all Google AI — not for sale"),
+                ("Amazon (Trainium)", "AWS custom AI chips — reducing Nvidia dependency"),
+                ("Microsoft (Maia)", "Azure Maia AI accelerator — Microsoft custom silicon"),
+                ("Qualcomm", "AI inference chips for edge/mobile devices"),
+            ],
+            "customers_en": [
+                ("Microsoft / Azure", "Largest single cloud buyer of H100s. Billions in orders."),
+                ("Meta", "350,000+ H100s for Llama AI training"),
+                ("Google", "Large H100 buyer alongside own TPUs"),
+                ("Amazon AWS", "H100 instances. Also building own chips."),
+                ("Tesla", "D1 training cluster + FSD compute"),
+                ("OpenAI", "Primary training compute partner"),
+            ],
+            "resources_en": [
+                ("TSMC Capacity", "Allocation-limited — TSMC CoWoS packaging bottleneck"),
+                ("HBM Supply", "Samsung/SK Hynix HBM production constrained through 2025"),
+                ("Rare Earths", "Neodymium, Tantalum for chip components"),
+                ("Power Infrastructure", "H100 DGX racks require 10kW+ per unit — data center power a limit"),
+            ],
+            "subsidiaries_en": [
+                ("Mellanox (InfiniBand)", "Acquired 2020 $6.9B — AI cluster networking backbone"),
+                ("Cumulus Networks", "Acquired 2020 — network OS software"),
+                ("Arm (Stake)", "$40B acquisition blocked; still ecosystem partner"),
+                ("DeepMind partnership", "Research collaboration (not owned)"),
+            ],
+            "suppliers_ko": [
+                ("TSMC (대만)", "전 GPU 파운드리 — 4nm/3nm 공정", "핵심", "#FF4B4B"),
+                ("삼성 (한국)", "H100/H200용 HBM (고대역폭 메모리)", "핵심", "#FF4B4B"),
+                ("SK하이닉스 (한국)", "블랙웰 B200 GPU용 HBM3E 메모리", "핵심", "#FF4B4B"),
+                ("마이크론 (미국)", "소비자 GPU용 GDDR6X 메모리", "높음", "#FFA500"),
+                ("ASE그룹 (대만)", "고급 칩 패키징 / CoWoS", "높음", "#FFA500"),
+                ("시놉시스/캐던스 (미국)", "칩 설계용 EDA 툴", "중간", "#FFD700"),
+            ],
+            "competitors_ko": [
+                ("AMD", "MI300X GPU — 주요 AI 경쟁자. 'AI 칩 2위'"),
+                ("인텔", "가우디3 AI 가속기. 데이터센터 경쟁"),
+                ("구글 (TPU)", "자체 TPU로 전 구글 AI 구동 — 판매 안 함"),
+                ("아마존 (Trainium)", "AWS 자체 AI 칩 — 엔비디아 의존도 축소 시도"),
+                ("마이크로소프트 (Maia)", "애저 마이아 AI 가속기 — MS 자체 실리콘"),
+                ("퀄컴", "엣지/모바일 기기용 AI 추론 칩"),
+            ],
+            "customers_ko": [
+                ("마이크로소프트/애저", "H100 최대 단일 구매 클라우드. 수십억 달러 주문."),
+                ("메타", "라마 AI 학습용 H100 35만+ 대 구매"),
+                ("구글", "자체 TPU와 함께 대규모 H100 구매"),
+                ("아마존 AWS", "H100 인스턴스 제공. 자체 칩도 개발 중."),
+                ("테슬라", "D1 학습 클러스터 + FSD 컴퓨팅"),
+                ("오픈AI", "주요 학습 컴퓨팅 파트너"),
+            ],
+            "resources_ko": [
+                ("TSMC 생산 용량", "할당 제한 — TSMC CoWoS 패키징 병목"),
+                ("HBM 공급", "삼성/SK하이닉스 HBM 생산 2025년까지 제한"),
+                ("희토류", "칩 부품용 네오디뮴, 탄탈럼"),
+                ("전력 인프라", "H100 DGX 랙 당 10kW+ 필요 — 데이터센터 전력이 한계"),
+            ],
+            "subsidiaries_ko": [
+                ("멜라녹스 (인피니밴드)", "2020년 69억 달러 인수 — AI 클러스터 네트워킹 backbone"),
+                ("큐물러스 네트웍스", "2020년 인수 — 네트워크 OS 소프트웨어"),
+                ("Arm (지분)", "400억 달러 인수 무산; 여전히 생태계 파트너"),
+                ("딥마인드 파트너십", "연구 협력 (지분 소유 아님)"),
+            ],
+        },
+        "TSLA": {
+            "suppliers_en": [
+                ("Panasonic (Japan)", "2170 battery cells for Model 3/Y at Nevada Gigafactory", "Critical", "#FF4B4B"),
+                ("CATL (China)", "LFP battery cells for Standard Range models", "Critical", "#FF4B4B"),
+                ("LG Energy (Korea)", "Cylindrical cells for Model S/X/Cybertruck", "High", "#FFA500"),
+                ("Samsung SDI (Korea)", "Battery cells for energy storage products", "Medium", "#FFD700"),
+                ("NVIDIA", "Drive PX chips for early Autopilot (now custom HW4)", "Low", "#00D4AA"),
+                ("Mobileye (Intel)", "Early Autopilot sensor processing (ended 2016)", "Historical", "#8B9DB0"),
+            ],
+            "competitors_en": [
+                ("BYD (China)", "#1 EV seller globally in 2023. Aggressive on price."),
+                ("GM / Chevy Bolt, Silverado EV", "US legacy automaker going electric"),
+                ("Ford (F-150 Lightning, Mustang Mach-E)", "Strong brand + dealer network"),
+                ("Hyundai/Kia (Ioniq 6, EV6)", "Top-rated EVs, ICCU tech advantage"),
+                ("Rivian", "EV trucks/SUVs, Amazon delivery van partnership"),
+                ("Lucid Motors", "Premium long-range EV — targets Model S"),
+            ],
+            "customers_en": [
+                ("Consumer Direct", "No dealers — all sales via Tesla.com and stores"),
+                ("Enterprise Fleet", "Corporate EV fleets, taxi services"),
+                ("Utilities / Grid", "Megapack utility-scale battery storage"),
+                ("Homeowners", "Powerwall + Solar Roof ecosystem"),
+            ],
+            "resources_en": [
+                ("Lithium", "#1 battery input — Chile, Australia, Nevada. Price volatile."),
+                ("Cobalt", "Reduced in LFP cells but still in NCA batteries"),
+                ("Nickel", "High-nickel cathode for energy density — Russian/Indonesian supply"),
+                ("Copper", "Motors, wiring harness — extensive per vehicle"),
+                ("Rare Earths", "Permanent magnets in motors — China supply risk"),
+            ],
+            "subsidiaries_en": [
+                ("Tesla Energy", "Powerwall, Megapack, Solar Roof products"),
+                ("Tesla Insurance", "Direct auto insurance using driving behavior data"),
+                ("SolarCity (merged)", "Acquired 2016 $2.6B — solar panels, now Tesla Solar"),
+                ("The Boring Company (related)", "Elon Musk venture — Tesla vehicles in tunnels"),
+            ],
+            "suppliers_ko": [
+                ("파나소닉 (일본)", "네바다 기가팩토리에서 모델3/Y용 2170 배터리 셀", "핵심", "#FF4B4B"),
+                ("CATL (중국)", "스탠다드 레인지 모델용 LFP 배터리 셀", "핵심", "#FF4B4B"),
+                ("LG에너지솔루션 (한국)", "모델S/X/사이버트럭용 원통형 셀", "높음", "#FFA500"),
+                ("삼성SDI (한국)", "에너지 저장 제품용 배터리 셀", "중간", "#FFD700"),
+                ("엔비디아", "초기 오토파일럿용 Drive PX 칩 (현재 자체 HW4)", "낮음", "#00D4AA"),
+                ("모빌아이 (인텔)", "초기 오토파일럿 센서 처리 (2016년 종료)", "과거", "#8B9DB0"),
+            ],
+            "competitors_ko": [
+                ("BYD (중국)", "2023년 글로벌 EV 판매 1위. 공격적인 가격 정책."),
+                ("GM / 쉐보레 볼트, 실버라도 EV", "미국 전통 자동차기업의 전기차 전환"),
+                ("포드 (F-150 라이트닝, 머스탱 맥-E)", "강력한 브랜드 + 딜러 네트워크"),
+                ("현대/기아 (아이오닉6, EV6)", "최고 평가 EV, ICCU 기술 우위"),
+                ("리비안", "EV 트럭/SUV, 아마존 배달 밴 파트너십"),
+                ("루시드 모터스", "프리미엄 장거리 EV — 모델S 타겟"),
+            ],
+            "customers_ko": [
+                ("소비자 직판", "딜러 없음 — Tesla.com과 직영점에서만 판매"),
+                ("기업 차량", "법인 EV 차량대, 택시 서비스"),
+                ("전력 회사/그리드", "메가팩 유틸리티 스케일 배터리 저장"),
+                ("홈오너", "파워월 + 솔라루프 생태계"),
+            ],
+            "resources_ko": [
+                ("리튬", "배터리 1위 원료 — 칠레, 호주, 네바다. 가격 변동성 큼."),
+                ("코발트", "LFP 셀에서는 감소했으나 NCA 배터리에는 여전히 필요"),
+                ("니켈", "에너지 밀도용 고니켈 양극재 — 러시아/인도네시아 공급"),
+                ("구리", "모터, 와이어링 하네스 — 차량당 대량 사용"),
+                ("희토류", "모터 영구 자석 — 중국 공급 리스크"),
+            ],
+            "subsidiaries_ko": [
+                ("테슬라 에너지", "파워월, 메가팩, 솔라루프 제품군"),
+                ("테슬라 인슈어런스", "주행 데이터 기반 직접 자동차 보험"),
+                ("솔라시티 (합병)", "2016년 26억 달러 인수 — 태양광, 현재 테슬라 솔라"),
+                ("더 보링 컴퍼니 (관련)", "일론 머스크 벤처 — 터널 내 테슬라 차량 운행"),
+            ],
+        },
+    }
+
+    def get_company_history(ticker: str, lang: str) -> list:
+        key = ticker.upper().replace("^", "")
+        db = COMPANY_HISTORY_DB.get(key)
+        if not db:
+            return []
+        return db.get(lang, db.get("en", []))
+
+    def get_company_meta(ticker: str) -> dict:
+        key = ticker.upper().replace("^", "")
+        return COMPANY_HISTORY_DB.get(key, {})
+
+    def get_company_relations(ticker: str) -> dict:
+        key = ticker.upper().replace("^", "")
+        return COMPANY_RELATIONS_DB.get(key, {})
+
+    def build_history_timeline(history: list, company_name: str, lang: str) -> go.Figure:
+        if not history:
+            return go.Figure()
+
+        years = [h[0] for h in history]
+        titles = [h[1] for h in history]
+        descs = [h[2] for h in history]
+
+        # Alternate above/below to avoid overlap
+        y_pos = [1 if i % 2 == 0 else -1 for i in range(len(history))]
+        y_text = [1.15 if y > 0 else -1.15 for y in y_pos]
+
+        fig = go.Figure()
+
+        # Timeline spine
+        fig.add_shape(type="line", x0=years[0], x1=years[-1], y0=0, y1=0,
+                      line=dict(color="#3A4060", width=2))
+
+        # Event dots and connectors
+        for i, (yr, title, desc, yp, yt) in enumerate(zip(years, titles, descs, y_pos, y_text)):
+            color = "#FFA500" if i % 3 == 0 else "#00D4AA" if i % 3 == 1 else "#AB63FA"
+            # Connector line
+            fig.add_shape(type="line", x0=yr, x1=yr, y0=0, y1=yp * 0.9,
+                          line=dict(color=color, width=1.5, dash="dot"))
+            # Dot on spine
+            fig.add_trace(go.Scatter(
+                x=[yr], y=[0],
+                mode="markers",
+                marker=dict(size=12, color=color, line=dict(color="white", width=2)),
+                hovertext=f"<b>{yr} {title}</b><br>{desc}",
+                hoverinfo="text",
+                showlegend=False,
+            ))
+            # Label
+            fig.add_annotation(
+                x=yr, y=yt,
+                text=f"<b>{yr}</b><br>{title}",
+                showarrow=False,
+                font=dict(size=9, color=color),
+                bgcolor="rgba(20,25,45,0.85)",
+                bordercolor=color,
+                borderwidth=1,
+                borderpad=3,
+                align="center",
+            )
+
+        fig.update_layout(
+            template="plotly_dark",
+            height=500,
+            title=f"{company_name} — {'Corporate History Timeline' if lang == 'en' else '기업 역사 타임라인'}",
+            xaxis=dict(showgrid=False, zeroline=False, tickmode="array",
+                       tickvals=years, ticktext=years, tickangle=45),
+            yaxis=dict(visible=False, range=[-1.8, 1.8]),
+            margin=dict(l=0, r=0, t=50, b=60),
+            plot_bgcolor="#0E1117",
+            paper_bgcolor="#0E1117",
+            hovermode="closest",
+        )
+        return fig
+
+    # ══════════════════ TAB 6: COMPANY HISTORY TIMELINE ══════════════════
+    with tabs[5]:
+        meta = get_company_meta(ticker)
+        history_list = get_company_history(ticker, lang)
+
+        if meta:
+            st.markdown(f"""
+            <div style='background:linear-gradient(135deg,#1E2130,#16213E);border-radius:14px;
+                        padding:20px 28px;margin-bottom:20px;border:1px solid #2E3250;'>
+                <div style='font-size:1.5rem;font-weight:800;color:#FFA500;'>{meta.get("name","")}</div>
+                <div style='color:#B0BEC5;margin-top:6px;font-size:0.9rem;'>
+                    {'창업연도' if lang=='ko' else 'Founded'}: <b style='color:#FFFFFF;'>{meta.get("founded","")}</b>
+                    &nbsp;|&nbsp;
+                    {'창업자' if lang=='ko' else 'Founders'}: <b style='color:#FFFFFF;'>{meta.get("founders","")}</b>
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
+
+            if history_list:
+                st.plotly_chart(
+                    build_history_timeline(history_list, meta.get("name", ticker), lang),
+                    use_container_width=True,
+                )
+                st.markdown(f"<div class='section-header'>{'Key Milestones' if lang=='en' else '주요 이정표 상세'}</div>", unsafe_allow_html=True)
+                n_cols = 3
+                for i in range(0, len(history_list), n_cols):
+                    row = history_list[i:i+n_cols]
+                    cols_h = st.columns(n_cols)
+                    for col_h, (yr, title, desc) in zip(cols_h, row):
+                        with col_h:
+                            st.markdown(f"""
+                            <div style='background:#1E2130;border-left:3px solid #FFA500;
+                                        border-radius:8px;padding:12px 14px;margin-bottom:10px;min-height:100px;'>
+                                <div style='color:#FFA500;font-size:1rem;font-weight:700;'>{yr}</div>
+                                <div style='color:#FFFFFF;font-size:0.88rem;font-weight:600;margin:4px 0;'>{title}</div>
+                                <div style='color:#B0BEC5;font-size:0.78rem;line-height:1.5;'>{desc}</div>
+                            </div>
+                            """, unsafe_allow_html=True)
+            else:
+                st.info("이 기업의 상세 역사 데이터가 준비 중입니다. AAPL, MSFT, NVDA, TSLA는 지원됩니다." if lang=="ko"
+                        else "Detailed history not yet available. Try AAPL, MSFT, NVDA, or TSLA.")
+        else:
+            desc_text = info.get("longBusinessSummary","")
+            if desc_text:
+                st.markdown(f"<div class='summary-box'>{desc_text}</div>", unsafe_allow_html=True)
+            facts = [
+                ("Sector" if lang=="en" else "섹터", info.get("sector","N/A")),
+                ("Industry" if lang=="en" else "업종", info.get("industry","N/A")),
+                ("Country" if lang=="en" else "국가", info.get("country","N/A")),
+                ("Employees" if lang=="en" else "임직원", f"{info.get('fullTimeEmployees',0):,}" if info.get("fullTimeEmployees") else "N/A"),
+            ]
+            fa, fb = st.columns(2)
+            for j, (k, v) in enumerate(facts):
+                (fa if j%2==0 else fb).markdown(f"""
+                <div class='metric-card' style='text-align:left;padding:12px 16px;'>
+                    <span style='color:#8B9DB0;font-size:0.8rem;'>{k}</span><br>
+                    <span style='color:#FFFFFF;font-weight:600;'>{v}</span>
                 </div>""", unsafe_allow_html=True)
-        with rel_tabs[1]:
-            cc1, cc2 = st.columns(2)
-            for i, (comp_name, comp_desc) in enumerate(relations.get("competitors"+suffix, [])):
-                _clean = comp_name.split("/")[0].split("(")[0].strip()
-                _sym = resolve_ticker(_clean)
-                _btn_key = f"rel_comp_{ticker}_{comp_name[:20]}"
-                target_col = cc1 if i%2==0 else cc2
-                with target_col:
-                    if st.button(f"📈 {comp_name}", key=_btn_key, use_container_width=True):
+            st.info("📌 " + ("AAPL·MSFT·NVDA·TSLA 검색 시 상세 역사 타임라인을 볼 수 있습니다." if lang=="ko"
+                              else "Search AAPL, MSFT, NVDA, or TSLA for full history timeline."))
+
+    # ══════════════════ TAB 7: RELATIONSHIPS ══════════════════
+    with tabs[6]:
+        st.markdown(f"<div class='section-header'>{'Corporate Relationships & Dependencies' if lang=='en' else '기업 이해관계 및 의존성 분석'}</div>",
+                    unsafe_allow_html=True)
+        relations = get_company_relations(ticker)
+
+        if relations:
+            suffix = "_ko" if lang=="ko" else "_en"
+            rel_tabs = st.tabs([
+                "🏭 " + ("Suppliers" if lang=="en" else "공급망·협력사"),
+                "⚔️ " + ("Competitors" if lang=="en" else "경쟁사"),
+                "👥 " + ("Customers" if lang=="en" else "주요 고객"),
+                "⛏️ " + ("Resources" if lang=="en" else "핵심 자원·원자재"),
+                "🏢 " + ("Subsidiaries" if lang=="en" else "자회사·인수기업"),
+            ])
+            with rel_tabs[0]:
+                for sup_name, role, importance, color in relations.get("suppliers"+suffix, []):
+                    imp_width = {"Critical":100,"핵심":100,"High":75,"높음":75,"Medium":50,"중간":50,"Low":25,"낮음":25,"Historical":15,"과거":15}
+                    w = imp_width.get(importance, 50)
+                    _clean = sup_name.split("(")[0].strip()
+                    _sym = resolve_ticker(_clean)
+                    _btn_key = f"rel_sup_{ticker}_{sup_name[:20]}"
+                    if st.button(f"📈 {sup_name}", key=_btn_key, use_container_width=True):
                         st.session_state.ticker = _sym
                         st.session_state.sidebar_view = None
                         st.rerun()
                     st.markdown(f"""
-                    <div class='geo-card' style='border-left:3px solid #FF4B4B;margin:-8px 0 8px 0;'>
-                        <div style='font-weight:700;color:#FF6B6B;'>⚔️ {comp_name}</div>
-                        <div style='color:#B0BEC5;font-size:0.82rem;margin-top:6px;'>{comp_desc}</div>
+                    <div style='background:#1A1F35;border-radius:10px;padding:14px 18px;margin:-8px 0 10px 0;border:1px solid {color}40;'>
+                        <div style='display:flex;justify-content:space-between;align-items:center;'>
+                            <span style='font-weight:700;color:#FFFFFF;'>🏭 {sup_name}</span>
+                            <span style='color:{color};font-weight:700;background:{color}20;padding:2px 10px;border-radius:12px;font-size:0.8rem;'>{importance}</span>
+                        </div>
+                        <div style='color:#B0BEC5;font-size:0.82rem;margin:6px 0 8px 0;'>{role}</div>
+                        <div style='background:#0D1120;border-radius:4px;height:6px;'>
+                            <div style='background:{color};width:{w}%;height:6px;border-radius:4px;'></div>
+                        </div>
                     </div>""", unsafe_allow_html=True)
-        with rel_tabs[2]:
-            for cust_name, cust_desc in relations.get("customers"+suffix, []):
-                _clean = cust_name.split("(")[0].strip()
-                _sym = resolve_ticker(_clean)
-                _is_generic = _sym == _clean.upper() and len(_sym) > 6
-                _btn_key = f"rel_cust_{ticker}_{cust_name[:20]}"
-                if not _is_generic:
-                    if st.button(f"📈 {cust_name}", key=_btn_key, use_container_width=True):
-                        st.session_state.ticker = _sym
-                        st.session_state.sidebar_view = None
-                        st.rerun()
-                st.markdown(f"""
-                <div class='geo-card' style='border-left:3px solid #00D4AA;{'margin:-8px 0 8px 0;' if not _is_generic else ''}'>
-                    <div style='font-weight:700;color:#00D4AA;'>👥 {cust_name}</div>
-                    <div style='color:#B0BEC5;font-size:0.82rem;margin-top:6px;'>{cust_desc}</div>
-                </div>""", unsafe_allow_html=True)
-        with rel_tabs[3]:
-            for res_name, res_desc in relations.get("resources"+suffix, []):
-                st.markdown(f"""
-                <div class='geo-card' style='border-left:3px solid #FFD700;'>
-                    <div style='font-weight:700;color:#FFD700;'>⛏️ {res_name}</div>
-                    <div style='color:#B0BEC5;font-size:0.82rem;margin-top:6px;'>{res_desc}</div>
-                </div>""", unsafe_allow_html=True)
-        with rel_tabs[4]:
-            for sub_name, sub_desc in relations.get("subsidiaries"+suffix, []):
-                _clean = sub_name.split("(")[0].strip()
-                _sym = resolve_ticker(_clean)
-                _is_generic = _sym == _clean.upper() and len(_sym) > 8
-                _btn_key = f"rel_sub_{ticker}_{sub_name[:20]}"
-                if not _is_generic:
-                    if st.button(f"📈 {sub_name}", key=_btn_key, use_container_width=True):
-                        st.session_state.ticker = _sym
-                        st.session_state.sidebar_view = None
-                        st.rerun()
-                st.markdown(f"""
-                <div class='geo-card' style='border-left:3px solid #AB63FA;{'margin:-8px 0 8px 0;' if not _is_generic else ''}'>
-                    <div style='font-weight:700;color:#AB63FA;'>🏢 {sub_name}</div>
-                    <div style='color:#B0BEC5;font-size:0.82rem;margin-top:6px;'>{sub_desc}</div>
-                </div>""", unsafe_allow_html=True)
+            with rel_tabs[1]:
+                cc1, cc2 = st.columns(2)
+                for i, (comp_name, comp_desc) in enumerate(relations.get("competitors"+suffix, [])):
+                    _clean = comp_name.split("/")[0].split("(")[0].strip()
+                    _sym = resolve_ticker(_clean)
+                    _btn_key = f"rel_comp_{ticker}_{comp_name[:20]}"
+                    target_col = cc1 if i%2==0 else cc2
+                    with target_col:
+                        if st.button(f"📈 {comp_name}", key=_btn_key, use_container_width=True):
+                            st.session_state.ticker = _sym
+                            st.session_state.sidebar_view = None
+                            st.rerun()
+                        st.markdown(f"""
+                        <div class='geo-card' style='border-left:3px solid #FF4B4B;margin:-8px 0 8px 0;'>
+                            <div style='font-weight:700;color:#FF6B6B;'>⚔️ {comp_name}</div>
+                            <div style='color:#B0BEC5;font-size:0.82rem;margin-top:6px;'>{comp_desc}</div>
+                        </div>""", unsafe_allow_html=True)
+            with rel_tabs[2]:
+                for cust_name, cust_desc in relations.get("customers"+suffix, []):
+                    _clean = cust_name.split("(")[0].strip()
+                    _sym = resolve_ticker(_clean)
+                    _is_generic = _sym == _clean.upper() and len(_sym) > 6
+                    _btn_key = f"rel_cust_{ticker}_{cust_name[:20]}"
+                    if not _is_generic:
+                        if st.button(f"📈 {cust_name}", key=_btn_key, use_container_width=True):
+                            st.session_state.ticker = _sym
+                            st.session_state.sidebar_view = None
+                            st.rerun()
+                    st.markdown(f"""
+                    <div class='geo-card' style='border-left:3px solid #00D4AA;{'margin:-8px 0 8px 0;' if not _is_generic else ''}'>
+                        <div style='font-weight:700;color:#00D4AA;'>👥 {cust_name}</div>
+                        <div style='color:#B0BEC5;font-size:0.82rem;margin-top:6px;'>{cust_desc}</div>
+                    </div>""", unsafe_allow_html=True)
+            with rel_tabs[3]:
+                for res_name, res_desc in relations.get("resources"+suffix, []):
+                    st.markdown(f"""
+                    <div class='geo-card' style='border-left:3px solid #FFD700;'>
+                        <div style='font-weight:700;color:#FFD700;'>⛏️ {res_name}</div>
+                        <div style='color:#B0BEC5;font-size:0.82rem;margin-top:6px;'>{res_desc}</div>
+                    </div>""", unsafe_allow_html=True)
+            with rel_tabs[4]:
+                for sub_name, sub_desc in relations.get("subsidiaries"+suffix, []):
+                    _clean = sub_name.split("(")[0].strip()
+                    _sym = resolve_ticker(_clean)
+                    _is_generic = _sym == _clean.upper() and len(_sym) > 8
+                    _btn_key = f"rel_sub_{ticker}_{sub_name[:20]}"
+                    if not _is_generic:
+                        if st.button(f"📈 {sub_name}", key=_btn_key, use_container_width=True):
+                            st.session_state.ticker = _sym
+                            st.session_state.sidebar_view = None
+                            st.rerun()
+                    st.markdown(f"""
+                    <div class='geo-card' style='border-left:3px solid #AB63FA;{'margin:-8px 0 8px 0;' if not _is_generic else ''}'>
+                        <div style='font-weight:700;color:#AB63FA;'>🏢 {sub_name}</div>
+                        <div style='color:#B0BEC5;font-size:0.82rem;margin-top:6px;'>{sub_desc}</div>
+                    </div>""", unsafe_allow_html=True)
 
-        st.markdown("<br>", unsafe_allow_html=True)
-        st.markdown(f"<div class='section-header'>{'Dependency Overview' if lang=='en' else '의존성 종합 현황'}</div>", unsafe_allow_html=True)
-        suffix2 = "_ko" if lang=="ko" else "_en"
-        categories_r = (["공급망","경쟁사","고객","핵심자원","자회사"] if lang=="ko"
-                        else ["Suppliers","Competitors","Customers","Resources","Subsidiaries"])
-        counts_r = [
-            len(relations.get("suppliers"+suffix2,[])),
-            len(relations.get("competitors"+suffix2,[])),
-            len(relations.get("customers"+suffix2,[])),
-            len(relations.get("resources"+suffix2,[])),
-            len(relations.get("subsidiaries"+suffix2,[])),
-        ]
-        fig_rel = go.Figure(go.Bar(x=categories_r, y=counts_r,
-            marker_color=["#FFA500","#FF4B4B","#00D4AA","#FFD700","#AB63FA"],
-            text=counts_r, textposition="outside"))
-        fig_rel.update_layout(template="plotly_dark", height=300,
-            title=f"{company_name} — {'Mapped Relationships' if lang=='en' else '매핑된 이해관계 수'}",
-            margin=dict(l=0,r=0,t=50,b=0), plot_bgcolor="#0E1117", paper_bgcolor="#0E1117")
-        st.plotly_chart(fig_rel, use_container_width=True)
-    else:
-        st.info("📌 " + ("현재 AAPL·MSFT·NVDA·TSLA의 이해관계 데이터가 제공됩니다." if lang=="ko"
-                          else "Relationship data available for AAPL, MSFT, NVDA, TSLA."))
+            st.markdown("<br>", unsafe_allow_html=True)
+            st.markdown(f"<div class='section-header'>{'Dependency Overview' if lang=='en' else '의존성 종합 현황'}</div>", unsafe_allow_html=True)
+            suffix2 = "_ko" if lang=="ko" else "_en"
+            categories_r = (["공급망","경쟁사","고객","핵심자원","자회사"] if lang=="ko"
+                            else ["Suppliers","Competitors","Customers","Resources","Subsidiaries"])
+            counts_r = [
+                len(relations.get("suppliers"+suffix2,[])),
+                len(relations.get("competitors"+suffix2,[])),
+                len(relations.get("customers"+suffix2,[])),
+                len(relations.get("resources"+suffix2,[])),
+                len(relations.get("subsidiaries"+suffix2,[])),
+            ]
+            fig_rel = go.Figure(go.Bar(x=categories_r, y=counts_r,
+                marker_color=["#FFA500","#FF4B4B","#00D4AA","#FFD700","#AB63FA"],
+                text=counts_r, textposition="outside"))
+            fig_rel.update_layout(template="plotly_dark", height=300,
+                title=f"{company_name} — {'Mapped Relationships' if lang=='en' else '매핑된 이해관계 수'}",
+                margin=dict(l=0,r=0,t=50,b=0), plot_bgcolor="#0E1117", paper_bgcolor="#0E1117")
+            st.plotly_chart(fig_rel, use_container_width=True)
+        else:
+            st.info("📌 " + ("현재 AAPL·MSFT·NVDA·TSLA의 이해관계 데이터가 제공됩니다." if lang=="ko"
+                              else "Relationship data available for AAPL, MSFT, NVDA, TSLA."))
 
-# ══════════════════ TAB 8: SEMICONDUCTOR ECOSYSTEM ══════════════════
-SEMI_UNIVERSE = {
-    "fabless_en": {
-        "label": "🧠 Fabless Chip Designers",
-        "desc": "Design chips but outsource fabrication to foundries",
-        "color": "#FFA500",
-        "companies": [
-            ("NVDA",  "NVIDIA",     "AI GPU / Data Center",        "USA",    4.5),
-            ("AMD",   "AMD",        "CPU / GPU / AI Chips",         "USA",    3.2),
-            ("QCOM",  "Qualcomm",   "Mobile SoC / 5G Modem",       "USA",    2.8),
-            ("AVGO",  "Broadcom",   "Networking / Wi-Fi Chips",     "USA",    3.8),
-            ("MRVL",  "Marvell",    "Data Center / 5G",            "USA",    1.2),
-            ("MCHP",  "Microchip",  "MCU / Analog",                "USA",    0.8),
-            ("SWKS",  "Skyworks",   "RF Chips for Mobile",         "USA",    0.7),
-            ("MPWR",  "Monolithic Power","Power Management",       "USA",    0.9),
-            ("AMAT",  "Applied Mat","(Equipment — see below)",     "USA",    None),
-            ("ARM",   "Arm Holdings","CPU Architecture Licensor",  "UK",     1.5),
-            ("MDIA",  "MediaTek",   "Mobile SoC (budget/mid)",     "Taiwan", 1.1),
-            ("BRCM",  "Broadcom",   "Networking ASIC",             "USA",    3.8),
-        ],
-    },
-    "idm_en": {
-        "label": "🏭 IDM (Integrated Device Manufacturers)",
-        "desc": "Design AND manufacture their own chips",
-        "color": "#00D4AA",
-        "companies": [
-            ("INTC",      "Intel",           "CPU / Data Center / Foundry", "USA",    1.8),
-            ("005930.KS", "Samsung",         "Logic / DRAM / NAND / Foundry","Korea",  4.5),
-            ("TXN",       "Texas Instruments","Analog / Embedded",          "USA",    1.6),
-            ("STM",       "STMicroelectronics","MCU / Power / Automotive",  "Europe", 0.7),
-            ("NXPI",      "NXP Semiconductors","Automotive / IoT",          "Netherlands",0.6),
-            ("ON",        "ON Semiconductor","Power / Automotive",          "USA",    0.5),
-            ("WOLF",      "Wolfspeed",       "Silicon Carbide (SiC) EV",    "USA",    0.2),
-        ],
-    },
-    "foundry_en": {
-        "label": "🔬 Pure-Play Foundries",
-        "desc": "Manufacture chips designed by others (contract fab)",
-        "color": "#AB63FA",
-        "companies": [
-            ("TSM",       "TSMC",            "World's #1 Foundry — 2nm/3nm/5nm", "Taiwan", 8.5),
-            ("GFS",       "GlobalFoundries", "Mature nodes, US/EU security supply", "USA", 0.9),
-            ("000660.KS", "SK Hynix",        "Memory + Foundry services",       "Korea", 1.2),
-            ("UMC",       "UMC",             "Mature node foundry",             "Taiwan", 0.4),
-            ("SMICY",     "SMIC",            "China's largest foundry (N+2 node)","China", 0.6),
-            ("VX",        "Semtech",         "Specialized analog foundry",      "USA",    0.2),
-        ],
-    },
-    "memory_en": {
-        "label": "💾 Memory Manufacturers",
-        "desc": "DRAM, NAND Flash, HBM production",
-        "color": "#64B5F6",
-        "companies": [
-            ("MU",        "Micron",          "DRAM / NAND / HBM — US memory giant", "USA",   0.9),
-            ("005930.KS", "Samsung Memory",  "World #1 DRAM + NAND + HBM3E",    "Korea",  4.5),
-            ("000660.KS", "SK Hynix",        "HBM3E leader for NVIDIA AI chips", "Korea",  1.2),
-            ("WDC",       "Western Digital", "NAND / SSD storage",              "USA",    0.5),
-            ("STX",       "Seagate",         "HDD + Enterprise storage",        "USA",    0.4),
-        ],
-    },
-    "equipment_en": {
-        "label": "⚙️ Semiconductor Equipment",
-        "desc": "Machines that make chips — critical chokepoint",
-        "color": "#FF6B6B",
-        "companies": [
-            ("ASML",  "ASML",              "EUV Lithography — sole global supplier", "Netherlands", 3.8),
-            ("AMAT",  "Applied Materials", "CVD/PVD/Etch/CMP tools",            "USA",  1.6),
-            ("LRCX",  "Lam Research",      "Etch & Deposition systems",          "USA",  1.1),
-            ("KLAC",  "KLA Corporation",   "Process Control & Inspection",       "USA",  0.9),
-            ("ONTO",  "Onto Innovation",   "Metrology & Inspection",             "USA",  0.2),
-            ("ACMR",  "ACM Research",      "Wafer Cleaning — China alt.",        "USA",  0.2),
-            ("TOELY", "Tokyo Electron",    "CVD / Etch / Coater systems",        "Japan",1.8),
-            ("HIMX",  "Himax",             "Display driver ICs",                 "Taiwan",0.1),
-            ("COHU",  "Cohu",              "Semiconductor test handlers",        "USA",  0.1),
-            ("FORM",  "FormFactor",        "Wafer probe cards",                  "USA",  0.1),
-            ("ENTG",  "Entegris",          "Materials delivery systems",         "USA",  0.3),
-            ("CCMP",  "CMC Materials",     "CMP slurries & pads",               "USA",  0.2),
-        ],
-    },
-    "materials_en": {
-        "label": "⛏️ Semiconductor Materials & Chemicals",
-        "desc": "Silicon wafers, gases, photoresist, specialty chemicals",
-        "color": "#FFD700",
-        "companies": [
-            ("SIEGY", "Shin-Etsu Chemical","#1 silicon wafer maker globally",   "Japan", 1.2),
-            ("SUMCF", "SUMCO",             "#2 silicon wafer maker",            "Japan", 0.3),
-            ("SOLV",  "Solvay",            "Ultra-pure chemicals for fabs",     "Belgium",0.2),
-            ("APD",   "Air Products",      "Ultra-pure gases (N2, H2, Ar, O2)", "USA",   0.6),
-            ("LIN",   "Linde",             "Specialty gases for semiconductor", "Ireland",1.8),
-            ("AZPN",  "AspenTech",         "Process optimization software",     "USA",   0.2),
-            ("CMC",   "CMC Materials",     "Polishing slurries (CMP)",          "USA",   0.2),
-            ("FSM",   "Ferroglobe",        "Silicon metal — solar/semi raw mat","Spain", 0.1),
-            ("TROX",  "Tronox",            "Titanium dioxide specialty chems",  "USA",   0.1),
-        ],
-    },
-    "packaging_en": {
-        "label": "📦 Advanced Packaging & Testing",
-        "desc": "OSAT, CoWoS, HBM stacking, chip-on-wafer",
-        "color": "#00BFA5",
-        "companies": [
-            ("ASX",   "ASE Technology",   "World's #1 OSAT packaging & test",  "Taiwan",0.5),
-            ("AMKR",  "Amkor Technology", "#2 OSAT — advanced packaging",       "USA",   0.3),
-            ("MX",    "Magnachip",        "Display driver, OLED IC",            "Korea", 0.1),
-            ("IMOS",  "ChipMOS",          "Memory test & packaging",            "Taiwan",0.1),
-            ("SPIL",  "SPIL",             "Siliconware Precision packaging",    "Taiwan",0.2),
-        ],
-    },
-    "eda_ip_en": {
-        "label": "🖥️ EDA Software & IP",
-        "desc": "Design tools and IP blocks that enable chip design",
-        "color": "#CE93D8",
-        "companies": [
-            ("SNPS",  "Synopsys",          "EDA tools + IP (acquired Ansys)",   "USA",   0.9),
-            ("CDNS",  "Cadence Design",    "EDA tools — PCB, IC, system sim",   "USA",   0.8),
-            ("MENT",  "Siemens EDA",       "Mentor Graphics — part of Siemens", "Germany",None),
-            ("ARM",   "Arm Holdings",      "CPU IP cores — licensed to all",    "UK",    1.5),
-            ("AMBA",  "Ambarella",         "Vision AI / SoC IP",                "USA",   0.2),
-            ("IMPV",  "Imperva",           "Security IP",                       "USA",   0.1),
-        ],
-    },
-}
+    # ══════════════════ TAB 8: SEMICONDUCTOR ECOSYSTEM ══════════════════
+    SEMI_UNIVERSE = {
+        "fabless_en": {
+            "label": "🧠 Fabless Chip Designers",
+            "desc": "Design chips but outsource fabrication to foundries",
+            "color": "#FFA500",
+            "companies": [
+                ("NVDA",  "NVIDIA",     "AI GPU / Data Center",        "USA",    4.5),
+                ("AMD",   "AMD",        "CPU / GPU / AI Chips",         "USA",    3.2),
+                ("QCOM",  "Qualcomm",   "Mobile SoC / 5G Modem",       "USA",    2.8),
+                ("AVGO",  "Broadcom",   "Networking / Wi-Fi Chips",     "USA",    3.8),
+                ("MRVL",  "Marvell",    "Data Center / 5G",            "USA",    1.2),
+                ("MCHP",  "Microchip",  "MCU / Analog",                "USA",    0.8),
+                ("SWKS",  "Skyworks",   "RF Chips for Mobile",         "USA",    0.7),
+                ("MPWR",  "Monolithic Power","Power Management",       "USA",    0.9),
+                ("AMAT",  "Applied Mat","(Equipment — see below)",     "USA",    None),
+                ("ARM",   "Arm Holdings","CPU Architecture Licensor",  "UK",     1.5),
+                ("MDIA",  "MediaTek",   "Mobile SoC (budget/mid)",     "Taiwan", 1.1),
+                ("BRCM",  "Broadcom",   "Networking ASIC",             "USA",    3.8),
+            ],
+        },
+        "idm_en": {
+            "label": "🏭 IDM (Integrated Device Manufacturers)",
+            "desc": "Design AND manufacture their own chips",
+            "color": "#00D4AA",
+            "companies": [
+                ("INTC",      "Intel",           "CPU / Data Center / Foundry", "USA",    1.8),
+                ("005930.KS", "Samsung",         "Logic / DRAM / NAND / Foundry","Korea",  4.5),
+                ("TXN",       "Texas Instruments","Analog / Embedded",          "USA",    1.6),
+                ("STM",       "STMicroelectronics","MCU / Power / Automotive",  "Europe", 0.7),
+                ("NXPI",      "NXP Semiconductors","Automotive / IoT",          "Netherlands",0.6),
+                ("ON",        "ON Semiconductor","Power / Automotive",          "USA",    0.5),
+                ("WOLF",      "Wolfspeed",       "Silicon Carbide (SiC) EV",    "USA",    0.2),
+            ],
+        },
+        "foundry_en": {
+            "label": "🔬 Pure-Play Foundries",
+            "desc": "Manufacture chips designed by others (contract fab)",
+            "color": "#AB63FA",
+            "companies": [
+                ("TSM",       "TSMC",            "World's #1 Foundry — 2nm/3nm/5nm", "Taiwan", 8.5),
+                ("GFS",       "GlobalFoundries", "Mature nodes, US/EU security supply", "USA", 0.9),
+                ("000660.KS", "SK Hynix",        "Memory + Foundry services",       "Korea", 1.2),
+                ("UMC",       "UMC",             "Mature node foundry",             "Taiwan", 0.4),
+                ("SMICY",     "SMIC",            "China's largest foundry (N+2 node)","China", 0.6),
+                ("VX",        "Semtech",         "Specialized analog foundry",      "USA",    0.2),
+            ],
+        },
+        "memory_en": {
+            "label": "💾 Memory Manufacturers",
+            "desc": "DRAM, NAND Flash, HBM production",
+            "color": "#64B5F6",
+            "companies": [
+                ("MU",        "Micron",          "DRAM / NAND / HBM — US memory giant", "USA",   0.9),
+                ("005930.KS", "Samsung Memory",  "World #1 DRAM + NAND + HBM3E",    "Korea",  4.5),
+                ("000660.KS", "SK Hynix",        "HBM3E leader for NVIDIA AI chips", "Korea",  1.2),
+                ("WDC",       "Western Digital", "NAND / SSD storage",              "USA",    0.5),
+                ("STX",       "Seagate",         "HDD + Enterprise storage",        "USA",    0.4),
+            ],
+        },
+        "equipment_en": {
+            "label": "⚙️ Semiconductor Equipment",
+            "desc": "Machines that make chips — critical chokepoint",
+            "color": "#FF6B6B",
+            "companies": [
+                ("ASML",  "ASML",              "EUV Lithography — sole global supplier", "Netherlands", 3.8),
+                ("AMAT",  "Applied Materials", "CVD/PVD/Etch/CMP tools",            "USA",  1.6),
+                ("LRCX",  "Lam Research",      "Etch & Deposition systems",          "USA",  1.1),
+                ("KLAC",  "KLA Corporation",   "Process Control & Inspection",       "USA",  0.9),
+                ("ONTO",  "Onto Innovation",   "Metrology & Inspection",             "USA",  0.2),
+                ("ACMR",  "ACM Research",      "Wafer Cleaning — China alt.",        "USA",  0.2),
+                ("TOELY", "Tokyo Electron",    "CVD / Etch / Coater systems",        "Japan",1.8),
+                ("HIMX",  "Himax",             "Display driver ICs",                 "Taiwan",0.1),
+                ("COHU",  "Cohu",              "Semiconductor test handlers",        "USA",  0.1),
+                ("FORM",  "FormFactor",        "Wafer probe cards",                  "USA",  0.1),
+                ("ENTG",  "Entegris",          "Materials delivery systems",         "USA",  0.3),
+                ("CCMP",  "CMC Materials",     "CMP slurries & pads",               "USA",  0.2),
+            ],
+        },
+        "materials_en": {
+            "label": "⛏️ Semiconductor Materials & Chemicals",
+            "desc": "Silicon wafers, gases, photoresist, specialty chemicals",
+            "color": "#FFD700",
+            "companies": [
+                ("SIEGY", "Shin-Etsu Chemical","#1 silicon wafer maker globally",   "Japan", 1.2),
+                ("SUMCF", "SUMCO",             "#2 silicon wafer maker",            "Japan", 0.3),
+                ("SOLV",  "Solvay",            "Ultra-pure chemicals for fabs",     "Belgium",0.2),
+                ("APD",   "Air Products",      "Ultra-pure gases (N2, H2, Ar, O2)", "USA",   0.6),
+                ("LIN",   "Linde",             "Specialty gases for semiconductor", "Ireland",1.8),
+                ("AZPN",  "AspenTech",         "Process optimization software",     "USA",   0.2),
+                ("CMC",   "CMC Materials",     "Polishing slurries (CMP)",          "USA",   0.2),
+                ("FSM",   "Ferroglobe",        "Silicon metal — solar/semi raw mat","Spain", 0.1),
+                ("TROX",  "Tronox",            "Titanium dioxide specialty chems",  "USA",   0.1),
+            ],
+        },
+        "packaging_en": {
+            "label": "📦 Advanced Packaging & Testing",
+            "desc": "OSAT, CoWoS, HBM stacking, chip-on-wafer",
+            "color": "#00BFA5",
+            "companies": [
+                ("ASX",   "ASE Technology",   "World's #1 OSAT packaging & test",  "Taiwan",0.5),
+                ("AMKR",  "Amkor Technology", "#2 OSAT — advanced packaging",       "USA",   0.3),
+                ("MX",    "Magnachip",        "Display driver, OLED IC",            "Korea", 0.1),
+                ("IMOS",  "ChipMOS",          "Memory test & packaging",            "Taiwan",0.1),
+                ("SPIL",  "SPIL",             "Siliconware Precision packaging",    "Taiwan",0.2),
+            ],
+        },
+        "eda_ip_en": {
+            "label": "🖥️ EDA Software & IP",
+            "desc": "Design tools and IP blocks that enable chip design",
+            "color": "#CE93D8",
+            "companies": [
+                ("SNPS",  "Synopsys",          "EDA tools + IP (acquired Ansys)",   "USA",   0.9),
+                ("CDNS",  "Cadence Design",    "EDA tools — PCB, IC, system sim",   "USA",   0.8),
+                ("MENT",  "Siemens EDA",       "Mentor Graphics — part of Siemens", "Germany",None),
+                ("ARM",   "Arm Holdings",      "CPU IP cores — licensed to all",    "UK",    1.5),
+                ("AMBA",  "Ambarella",         "Vision AI / SoC IP",                "USA",   0.2),
+                ("IMPV",  "Imperva",           "Security IP",                       "USA",   0.1),
+            ],
+        },
+    }
 
-# Korean version (same tickers, translated labels)
-SEMI_UNIVERSE_KO = {
-    "fabless": {
-        "label": "🧠 팹리스 (설계 전문)",
-        "desc": "칩을 설계하되 생산은 파운드리에 외주",
-        "color": "#FFA500",
-    },
-    "idm": {
-        "label": "🏭 종합반도체기업 (IDM)",
-        "desc": "설계·생산을 모두 자체 수행",
-        "color": "#00D4AA",
-    },
-    "foundry": {
-        "label": "🔬 파운드리 (위탁생산)",
-        "desc": "다른 기업이 설계한 칩을 수탁 생산",
-        "color": "#AB63FA",
-    },
-    "memory": {
-        "label": "💾 메모리 반도체",
-        "desc": "DRAM, NAND 플래시, HBM 생산",
-        "color": "#64B5F6",
-    },
-    "equipment": {
-        "label": "⚙️ 반도체 장비",
-        "desc": "반도체 제조 장비 — 공급망의 핵심 병목",
-        "color": "#FF6B6B",
-    },
-    "materials": {
-        "label": "⛏️ 소재·화학·가스",
-        "desc": "실리콘 웨이퍼, 특수가스, 포토레지스트, 슬러리",
-        "color": "#FFD700",
-    },
-    "packaging": {
-        "label": "📦 패키징·테스트 (OSAT)",
-        "desc": "CoWoS, HBM 스태킹, 칩온웨이퍼 등 고급 패키징",
-        "color": "#00BFA5",
-    },
-    "eda_ip": {
-        "label": "🖥️ EDA 소프트웨어·IP",
-        "desc": "칩 설계를 가능하게 하는 툴 및 IP 블록",
-        "color": "#CE93D8",
-    },
-}
+    # Korean version (same tickers, translated labels)
+    SEMI_UNIVERSE_KO = {
+        "fabless": {
+            "label": "🧠 팹리스 (설계 전문)",
+            "desc": "칩을 설계하되 생산은 파운드리에 외주",
+            "color": "#FFA500",
+        },
+        "idm": {
+            "label": "🏭 종합반도체기업 (IDM)",
+            "desc": "설계·생산을 모두 자체 수행",
+            "color": "#00D4AA",
+        },
+        "foundry": {
+            "label": "🔬 파운드리 (위탁생산)",
+            "desc": "다른 기업이 설계한 칩을 수탁 생산",
+            "color": "#AB63FA",
+        },
+        "memory": {
+            "label": "💾 메모리 반도체",
+            "desc": "DRAM, NAND 플래시, HBM 생산",
+            "color": "#64B5F6",
+        },
+        "equipment": {
+            "label": "⚙️ 반도체 장비",
+            "desc": "반도체 제조 장비 — 공급망의 핵심 병목",
+            "color": "#FF6B6B",
+        },
+        "materials": {
+            "label": "⛏️ 소재·화학·가스",
+            "desc": "실리콘 웨이퍼, 특수가스, 포토레지스트, 슬러리",
+            "color": "#FFD700",
+        },
+        "packaging": {
+            "label": "📦 패키징·테스트 (OSAT)",
+            "desc": "CoWoS, HBM 스태킹, 칩온웨이퍼 등 고급 패키징",
+            "color": "#00BFA5",
+        },
+        "eda_ip": {
+            "label": "🖥️ EDA 소프트웨어·IP",
+            "desc": "칩 설계를 가능하게 하는 툴 및 IP 블록",
+            "color": "#CE93D8",
+        },
+    }
 
-SEMI_SUPPLY_CHAIN_KO = [
-    ("⛏️ 소재·가스", "SIEGY, SUMCF, APD, Linde\n실리콘 웨이퍼, 특수가스"),
-    ("⚙️ 장비", "ASML, AMAT, LRCX, KLAC, TEL\nEUV 노광·식각·증착 장비"),
-    ("🔬 파운드리", "TSMC, 삼성, GlobalFoundries\n웨이퍼 위탁 생산"),
-    ("🧠 설계 (팹리스)", "NVDA, AMD, Qualcomm, Broadcom\n칩 아키텍처 설계"),
-    ("📦 패키징·테스트", "ASE, Amkor\n최종 패키징·검수"),
-    ("🖥️ 완제품", "서버, PC, 스마트폰, 자동차\n최종 고객"),
-]
+    SEMI_SUPPLY_CHAIN_KO = [
+        ("⛏️ 소재·가스", "SIEGY, SUMCF, APD, Linde\n실리콘 웨이퍼, 특수가스"),
+        ("⚙️ 장비", "ASML, AMAT, LRCX, KLAC, TEL\nEUV 노광·식각·증착 장비"),
+        ("🔬 파운드리", "TSMC, 삼성, GlobalFoundries\n웨이퍼 위탁 생산"),
+        ("🧠 설계 (팹리스)", "NVDA, AMD, Qualcomm, Broadcom\n칩 아키텍처 설계"),
+        ("📦 패키징·테스트", "ASE, Amkor\n최종 패키징·검수"),
+        ("🖥️ 완제품", "서버, PC, 스마트폰, 자동차\n최종 고객"),
+    ]
 
-SEMI_SUPPLY_CHAIN_EN = [
-    ("⛏️ Materials & Gases", "SIEGY, SUMCF, APD, Linde\nSilicon wafers, specialty gases"),
-    ("⚙️ Equipment", "ASML, AMAT, LRCX, KLAC, TEL\nEUV litho, etch, deposition tools"),
-    ("🔬 Foundry / Fab", "TSMC, Samsung, GlobalFoundries\nWafer contract manufacturing"),
-    ("🧠 Chip Design (Fabless)", "NVDA, AMD, Qualcomm, Broadcom\nChip architecture & design"),
-    ("📦 Packaging & Test", "ASE, Amkor\nFinal packaging & quality test"),
-    ("🖥️ End Products", "Servers, PCs, Smartphones, Autos\nEnd customers"),
-]
+    SEMI_SUPPLY_CHAIN_EN = [
+        ("⛏️ Materials & Gases", "SIEGY, SUMCF, APD, Linde\nSilicon wafers, specialty gases"),
+        ("⚙️ Equipment", "ASML, AMAT, LRCX, KLAC, TEL\nEUV litho, etch, deposition tools"),
+        ("🔬 Foundry / Fab", "TSMC, Samsung, GlobalFoundries\nWafer contract manufacturing"),
+        ("🧠 Chip Design (Fabless)", "NVDA, AMD, Qualcomm, Broadcom\nChip architecture & design"),
+        ("📦 Packaging & Test", "ASE, Amkor\nFinal packaging & quality test"),
+        ("🖥️ End Products", "Servers, PCs, Smartphones, Autos\nEnd customers"),
+    ]
 
-@st.cache_data(ttl=600)
-def get_semi_prices(tickers: list) -> dict:
-    result = {}
-    for t in tickers:
-        try:
-            info_d = yf.Ticker(t).fast_info
-            price = getattr(info_d, "last_price", 0) or 0
-            prev  = getattr(info_d, "previous_close", price) or price
-            chg   = (price - prev) / prev * 100 if prev else 0
-            mktcap= getattr(info_d, "market_cap", 0) or 0
-            result[t] = {"price": price, "chg": chg, "mktcap": mktcap}
-        except Exception:
-            result[t] = {"price": 0, "chg": 0, "mktcap": 0}
-    return result
+    @st.cache_data(ttl=600)
+    def get_semi_prices(tickers: list) -> dict:
+        result = {}
+        for t in tickers:
+            try:
+                info_d = yf.Ticker(t).fast_info
+                price = getattr(info_d, "last_price", 0) or 0
+                prev  = getattr(info_d, "previous_close", price) or price
+                chg   = (price - prev) / prev * 100 if prev else 0
+                mktcap= getattr(info_d, "market_cap", 0) or 0
+                result[t] = {"price": price, "chg": chg, "mktcap": mktcap}
+            except Exception:
+                result[t] = {"price": 0, "chg": 0, "mktcap": 0}
+        return result
 
 if st.session_state.sidebar_view == "semi":
     lang_s = lang
@@ -3722,787 +3721,788 @@ if st.session_state.sidebar_view == "sectors":
         """, unsafe_allow_html=True)
 
 # ══════════════════ TAB 8: INVESTMENT ANALYSIS ══════════════════
-with tabs[7]:
-    lang_inv = st.session_state.lang
-    st.markdown(f"<div class='section-header'>{'📈 투자 분석 대시보드' if lang_inv=='ko' else '📈 Investment Analysis Dashboard'}</div>", unsafe_allow_html=True)
-    st.markdown(f"<small style='color:#8B9DB0;'>{'실시간 yFinance 데이터 기반 | 투자 결정은 전문가와 상담하세요' if lang_inv=='ko' else 'Real-time yFinance data | Consult a professional before investing'}</small>", unsafe_allow_html=True)
-    st.markdown("<br>", unsafe_allow_html=True)
-
-    # Fetch fresh financials
-    inv_info = info  # reuse already loaded info dict
-
-    def safe(val, fmt=None, suffix=""):
-        if val is None or val == "N/A" or (isinstance(val, float) and (val != val)):
-            return "N/A"
-        try:
-            if fmt == "pct":
-                return f"{float(val)*100:.1f}%"
-            elif fmt == "x":
-                return f"{float(val):.2f}x"
-            elif fmt == "f2":
-                return f"{float(val):.2f}"
-            elif fmt == "big":
-                v = float(val)
-                if abs(v) >= 1e12: return f"${v/1e12:.2f}T"
-                if abs(v) >= 1e9:  return f"${v/1e9:.1f}B"
-                if abs(v) >= 1e6:  return f"${v/1e6:.0f}M"
-                return f"${v:,.0f}"
-            else:
-                return str(val)
-        except Exception:
-            return "N/A"
-
-    # ── Section 1: Valuation ──
-    st.markdown(f"### {gl('PER', '💰 가치평가 (Valuation)' if lang_inv=='ko' else '💰 Valuation')}", unsafe_allow_html=True)
-
-    per  = inv_info.get("trailingPE") or inv_info.get("forwardPE")
-    pbr  = inv_info.get("priceToBook")
-    peg  = inv_info.get("pegRatio")
-    ps   = inv_info.get("priceToSalesTrailing12Months")
-    ev_ebitda = inv_info.get("enterpriseToEbitda")
-
-    val_metrics = [
-        ("PER", safe(per, "f2"), "PER", "낮을수록 저평가" if lang_inv=="ko" else "Lower = undervalued"),
-        ("PBR", safe(pbr, "f2"), "PBR", "1 미만 = 자산 대비 저평가" if lang_inv=="ko" else "< 1 = below book value"),
-        ("PEG", safe(peg, "f2"), "PEG", "1 미만 = 성장 대비 저평가" if lang_inv=="ko" else "< 1 = undervalued vs growth"),
-        ("P/S", safe(ps, "f2"), "P/S Ratio", "낮을수록 매출 대비 저평가" if lang_inv=="ko" else "Lower = cheaper vs sales"),
-        ("EV/EBITDA", safe(ev_ebitda, "f2"), "EV/EBITDA", "10 미만 = 저평가 기준" if lang_inv=="ko" else "Below 10 = generally cheap"),
-    ]
-
-    v_cols = st.columns(5)
-    for col, (name, val, gl_key, hint) in zip(v_cols, val_metrics):
-        try:
-            fval = float(val.replace("x","").replace("%","")) if val != "N/A" else None
-        except Exception:
-            fval = None
-        # Color coding
-        color = "#8B9DB0"
-        if name == "PER" and fval is not None:
-            color = "#00D4AA" if fval < 15 else "#FFA500" if fval < 30 else "#FF4B4B"
-        elif name == "PBR" and fval is not None:
-            color = "#00D4AA" if fval < 1 else "#FFA500" if fval < 3 else "#FF4B4B"
-        elif name == "PEG" and fval is not None:
-            color = "#00D4AA" if fval < 1 else "#FFA500" if fval < 2 else "#FF4B4B"
-        elif name == "EV/EBITDA" and fval is not None:
-            color = "#00D4AA" if fval < 10 else "#FFA500" if fval < 20 else "#FF4B4B"
-        col.markdown(f"""
-        <div class='metric-card'>
-            <div class='metric-label'>{gl(gl_key, name)}</div>
-            <div style='font-size:1.4rem;font-weight:700;color:{color};'>{val}</div>
-            <div style='font-size:0.72rem;color:#6B7A8D;margin-top:4px;'>{hint}</div>
-        </div>
-        """, unsafe_allow_html=True)
-
-    # ── Section 2: Profitability ──
-    st.markdown("<br>", unsafe_allow_html=True)
-    st.markdown(f"### {'🏆 수익성 (Profitability)' if lang_inv=='ko' else '🏆 Profitability'}", unsafe_allow_html=True)
-
-    roe  = inv_info.get("returnOnEquity")
-    roa  = inv_info.get("returnOnAssets")
-    op_margin  = inv_info.get("operatingMargins")
-    net_margin = inv_info.get("profitMargins")
-    gross_margin = inv_info.get("grossMargins")
-
-    # ROIC approximation: Net Income / (Total Assets - Current Liabilities)
-    net_income = inv_info.get("netIncomeToCommon", 0) or 0
-    total_assets = inv_info.get("totalAssets", 0) or 0
-    curr_liab = inv_info.get("totalCurrentLiabilities", 0) or 0
-    roic_val = (net_income / (total_assets - curr_liab)) if (total_assets - curr_liab) > 0 else None
-
-    prof_metrics = [
-        ("ROE", safe(roe, "pct"), "ROE", "15%↑ 우수" if lang_inv=="ko" else "15%+ excellent"),
-        ("ROA", safe(roa, "pct"), "ROA", "5%↑ 양호" if lang_inv=="ko" else "5%+ good"),
-        ("ROIC", safe(roic_val, "pct") if roic_val else "N/A", "ROIC", "WACC 초과 시 가치창출" if lang_inv=="ko" else "Above WACC = value creation"),
-        ("영업이익률" if lang_inv=="ko" else "Op. Margin", safe(op_margin, "pct"), "Operating Margin", "높을수록 경쟁우위" if lang_inv=="ko" else "Higher = stronger moat"),
-        ("순이익률" if lang_inv=="ko" else "Net Margin", safe(net_margin, "pct"), "Net Margin", "순수 수익성" if lang_inv=="ko" else "Final profitability"),
-    ]
-
-    p_cols = st.columns(5)
-    for col, (name, val, gl_key, hint) in zip(p_cols, prof_metrics):
-        try:
-            fval = float(val.replace("%","")) if val != "N/A" else None
-        except Exception:
-            fval = None
-        color = "#8B9DB0"
-        if fval is not None:
-            color = "#00D4AA" if fval >= 15 else "#FFA500" if fval >= 5 else "#FF4B4B"
-        col.markdown(f"""
-        <div class='metric-card'>
-            <div class='metric-label'>{gl(gl_key, name)}</div>
-            <div style='font-size:1.4rem;font-weight:700;color:{color};'>{val}</div>
-            <div style='font-size:0.72rem;color:#6B7A8D;margin-top:4px;'>{hint}</div>
-        </div>
-        """, unsafe_allow_html=True)
-
-    # ── Section 3: Growth ──
-    st.markdown("<br>", unsafe_allow_html=True)
-    st.markdown(f"### {'📈 성장성 (Growth)' if lang_inv=='ko' else '📈 Growth'}", unsafe_allow_html=True)
-
-    rev_growth   = inv_info.get("revenueGrowth")
-    earn_growth  = inv_info.get("earningsGrowth")
-    eps_trail    = inv_info.get("trailingEps")
-    eps_fwd      = inv_info.get("forwardEps")
-    eps_growth   = ((eps_fwd - eps_trail) / abs(eps_trail)) if eps_trail and eps_fwd and eps_trail != 0 else None
-    revenue_ttm  = inv_info.get("totalRevenue")
-    analyst_tgt  = inv_info.get("targetMeanPrice")
-    curr_pr      = inv_info.get("currentPrice") or inv_info.get("regularMarketPrice") or current_price
-    upside       = ((analyst_tgt - curr_pr) / curr_pr) if analyst_tgt and curr_pr else None
-
-    growth_metrics = [
-        ("매출 성장률" if lang_inv=="ko" else "Revenue Growth", safe(rev_growth, "pct"), "Revenue Growth", "YoY 성장" if lang_inv=="ko" else "YoY growth"),
-        ("순이익 성장률" if lang_inv=="ko" else "Earnings Growth", safe(earn_growth, "pct"), "EPS Growth", "YoY 이익 성장" if lang_inv=="ko" else "YoY earnings growth"),
-        ("EPS (TTM)", safe(eps_trail, "f2"), "EPS", "주당순이익" if lang_inv=="ko" else "Trailing 12M EPS"),
-        ("EPS (선행)" if lang_inv=="ko" else "EPS (Fwd)", safe(eps_fwd, "f2"), "EPS Growth", "예상 주당순이익" if lang_inv=="ko" else "Forward EPS estimate"),
-        ("애널리스트 목표가" if lang_inv=="ko" else "Analyst Target", f"${analyst_tgt:,.2f}" if analyst_tgt else "N/A", "EPS Growth",
-         f"상승 여력 {upside*100:.1f}%" if upside and upside>=0 and lang_inv=="ko"
-         else f"Upside {upside*100:.1f}%" if upside and upside>=0
-         else f"하락 여지 {abs(upside)*100:.1f}%" if upside and lang_inv=="ko"
-         else f"Downside {abs(upside)*100:.1f}%" if upside else "N/A"),
-    ]
-
-    g_cols = st.columns(5)
-    for col, (name, val, gl_key, hint) in zip(g_cols, growth_metrics):
-        try:
-            fval = float(val.replace("%","").replace("$","").replace(",","")) if val not in ("N/A","") else None
-        except Exception:
-            fval = None
-        color = "#8B9DB0"
-        if "성장" in name or "Growth" in name:
-            if fval is not None:
-                color = "#00D4AA" if fval >= 10 else "#FFA500" if fval >= 0 else "#FF4B4B"
-        col.markdown(f"""
-        <div class='metric-card'>
-            <div class='metric-label'>{gl(gl_key, name)}</div>
-            <div style='font-size:1.3rem;font-weight:700;color:{color};'>{val}</div>
-            <div style='font-size:0.72rem;color:#6B7A8D;margin-top:4px;'>{hint}</div>
-        </div>
-        """, unsafe_allow_html=True)
-
-    # ── Section 4: Stability ──
-    st.markdown("<br>", unsafe_allow_html=True)
-    st.markdown(f"### {'🛡️ 안정성 (Stability)' if lang_inv=='ko' else '🛡️ Stability'}", unsafe_allow_html=True)
-
-    total_debt  = inv_info.get("totalDebt", 0) or 0
-    eq          = inv_info.get("totalStockholderEquity") or inv_info.get("bookValue", 0) or 0
-    de_ratio    = (total_debt / (eq * inv_info.get("sharesOutstanding", 1))) if eq and inv_info.get("sharesOutstanding") else inv_info.get("debtToEquity")
-    curr_ratio  = inv_info.get("currentRatio")
-    quick_ratio = inv_info.get("quickRatio")
-    ebit        = inv_info.get("ebit", 0) or 0
-    int_exp     = inv_info.get("interestExpense", 0) or 0
-    int_cov     = abs(ebit / int_exp) if int_exp and int_exp != 0 and ebit else None
-    beta_val    = inv_info.get("beta")
-
-    stab_metrics = [
-        ("부채비율" if lang_inv=="ko" else "Debt/Equity", safe(de_ratio, "f2"), "Debt/Equity", "낮을수록 안전" if lang_inv=="ko" else "Lower = safer"),
-        ("유동비율" if lang_inv=="ko" else "Current Ratio", safe(curr_ratio, "f2"), "Current Ratio", "1.5↑ 안전" if lang_inv=="ko" else "1.5+ healthy"),
-        ("당좌비율" if lang_inv=="ko" else "Quick Ratio", safe(quick_ratio, "f2"), "Current Ratio", "1.0↑ 양호" if lang_inv=="ko" else "1.0+ good"),
-        ("이자보상배율" if lang_inv=="ko" else "Interest Coverage", safe(int_cov, "f2") if int_cov else "N/A", "Interest Coverage", "3↑ 안전" if lang_inv=="ko" else "3+ safe"),
-        ("베타" if lang_inv=="ko" else "Beta", safe(beta_val, "f2"), "Beta vs S&P 500", "1 초과=고변동성" if lang_inv=="ko" else ">1 = more volatile"),
-    ]
-
-    s_cols = st.columns(5)
-    for col, (name, val, gl_key, hint) in zip(s_cols, stab_metrics):
-        try:
-            fval = float(val.replace("%","")) if val != "N/A" else None
-        except Exception:
-            fval = None
-        color = "#8B9DB0"
-        if "부채" in name or "Debt" in name:
-            if fval is not None:
-                color = "#00D4AA" if fval < 1 else "#FFA500" if fval < 2 else "#FF4B4B"
-        elif "유동" in name or "Current" in name or "Quick" in name:
-            if fval is not None:
-                color = "#00D4AA" if fval >= 1.5 else "#FFA500" if fval >= 1 else "#FF4B4B"
-        elif "이자" in name or "Interest" in name:
-            if fval is not None:
-                color = "#00D4AA" if fval >= 3 else "#FFA500" if fval >= 1.5 else "#FF4B4B"
-        col.markdown(f"""
-        <div class='metric-card'>
-            <div class='metric-label'>{gl(gl_key, name)}</div>
-            <div style='font-size:1.4rem;font-weight:700;color:{color};'>{val}</div>
-            <div style='font-size:0.72rem;color:#6B7A8D;margin-top:4px;'>{hint}</div>
-        </div>
-        """, unsafe_allow_html=True)
-
-    # ── Section 5: Cash Flow ──
-    st.markdown("<br>", unsafe_allow_html=True)
-    st.markdown(f"### {'💵 현금흐름 (Cash Flow)' if lang_inv=='ko' else '💵 Cash Flow'}", unsafe_allow_html=True)
-
-    op_cf   = inv_info.get("operatingCashflow") or inv_info.get("totalCashFromOperatingActivities")
-    capex   = inv_info.get("capitalExpenditures", 0) or 0
-    fcf_val = (op_cf + capex) if op_cf else None  # capex is usually negative in yf
-    mkt_cap_v = inv_info.get("marketCap", 0) or 0
-    fcf_yield_v = (fcf_val / mkt_cap_v) if fcf_val and mkt_cap_v else None
-    div_yield   = inv_info.get("dividendYield")
-    payout_r    = inv_info.get("payoutRatio")
-    free_cf     = inv_info.get("freeCashflow")
-    if free_cf:
-        fcf_val = free_cf  # prefer direct FCF if available
-
-    cf_metrics = [
-        ("영업현금흐름" if lang_inv=="ko" else "Operating CF", safe(op_cf, "big"), "Operating CF", "실제 현금 창출력" if lang_inv=="ko" else "Real cash generation"),
-        ("FCF", safe(fcf_val, "big") if fcf_val else "N/A", "FCF", "주주 환원 여력" if lang_inv=="ko" else "Available for shareholders"),
-        ("FCF 수익률" if lang_inv=="ko" else "FCF Yield", safe(fcf_yield_v, "pct") if fcf_yield_v else "N/A", "FCF Yield", "높을수록 저평가" if lang_inv=="ko" else "Higher = undervalued"),
-        ("배당수익률" if lang_inv=="ko" else "Div. Yield", safe(div_yield, "pct") if div_yield else "무배당" if lang_inv=="ko" else "No dividend", "FCF", "현금 배당 비율" if lang_inv=="ko" else "Cash return to shareholders"),
-        ("배당성향" if lang_inv=="ko" else "Payout Ratio", safe(payout_r, "pct") if payout_r else "N/A", "FCF", "순이익 중 배당 비중" if lang_inv=="ko" else "% of earnings paid as dividend"),
-    ]
-
-    c_cols = st.columns(5)
-    for col, (name, val, gl_key, hint) in zip(c_cols, cf_metrics):
-        color = "#FFA500"
-        if "무배당" in str(val) or "No dividend" in str(val):
-            color = "#8B9DB0"
-        col.markdown(f"""
-        <div class='metric-card'>
-            <div class='metric-label'>{gl(gl_key, name)}</div>
-            <div style='font-size:1.2rem;font-weight:700;color:{color};'>{val}</div>
-            <div style='font-size:0.72rem;color:#6B7A8D;margin-top:4px;'>{hint}</div>
-        </div>
-        """, unsafe_allow_html=True)
-
-    # ── Section 6: Academic Models ──
-    st.markdown("<br>", unsafe_allow_html=True)
-    st.markdown(f"### {'🎓 학술 투자 모델 분석' if lang_inv=='ko' else '🎓 Academic Investment Models'}", unsafe_allow_html=True)
-
-    model_col1, model_col2 = st.columns(2)
-
-    # Graham Number
-    with model_col1:
-        eps_v = inv_info.get("trailingEps", 0) or 0
-        bps_v = inv_info.get("bookValue", 0) or 0
-        graham = None
-        if eps_v > 0 and bps_v > 0:
-            graham = (22.5 * eps_v * bps_v) ** 0.5
-        graham_str = f"${graham:,.2f}" if graham else "N/A (음수 EPS/BPS)"
-        upside_g = ((graham - curr_pr) / curr_pr * 100) if graham and curr_pr else None
-        g_color = "#00D4AA" if upside_g and upside_g > 0 else "#FF4B4B" if upside_g else "#8B9DB0"
-        graham_interpret = (
-            f"현재가 대비 {'저평가' if upside_g and upside_g>0 else '고평가'} {abs(upside_g):.1f}%" if upside_g else
-            ("EPS 또는 BPS가 음수여서 계산 불가" if lang_inv=="ko" else "Cannot compute: negative EPS or BPS")
-        )
-        st.markdown(f"""
-        <div class='geo-card'>
-            <div style='font-weight:700;color:#FFD700;font-size:1rem;'>{gl("Graham Number", "📐 그레이엄 넘버 (Graham Number)")}</div>
-            <div style='font-size:0.82rem;color:#B0BEC5;margin:6px 0;'>
-                {"벤저민 그레이엄의 안전마진 계산: √(22.5 × EPS × BPS)" if lang_inv=="ko" else "Benjamin Graham's intrinsic value: √(22.5 × EPS × BPS)"}
-            </div>
-            <div style='font-size:1.6rem;font-weight:800;color:{g_color};'>{graham_str}</div>
-            <div style='font-size:0.85rem;color:#B0BEC5;margin-top:6px;'>{graham_interpret}</div>
-            <div style='font-size:0.78rem;color:#6B7A8D;margin-top:4px;'>EPS: {safe(eps_v,"f2")} | BPS: {safe(bps_v,"f2")}</div>
-        </div>
-        """, unsafe_allow_html=True)
-
-    # Piotroski F-Score
-    with model_col2:
-        # Calculate simplified Piotroski F-Score (9 criteria)
-        pio_score = 0
-        pio_details = []
-        roa_v = inv_info.get("returnOnAssets", 0) or 0
-        op_cf_v2 = (op_cf or 0)
-        # Profitability (4 signals)
-        if roa_v > 0: pio_score += 1; pio_details.append(("ROA > 0", True))
-        else: pio_details.append(("ROA > 0", False))
-        if op_cf_v2 > 0: pio_score += 1; pio_details.append(("영업현금흐름 > 0" if lang_inv=="ko" else "Op. CF > 0", True))
-        else: pio_details.append(("영업현금흐름 > 0" if lang_inv=="ko" else "Op. CF > 0", False))
-        if earn_growth and earn_growth > 0: pio_score += 1; pio_details.append(("이익 증가" if lang_inv=="ko" else "Earnings↑", True))
-        else: pio_details.append(("이익 증가" if lang_inv=="ko" else "Earnings↑", False))
-        if op_cf_v2 > 0 and roa_v > 0 and op_cf_v2 > net_income: pio_score += 1; pio_details.append(("Accruals 건전" if lang_inv=="ko" else "Accruals OK", True))
-        else: pio_details.append(("Accruals 건전" if lang_inv=="ko" else "Accruals OK", False))
-        # Leverage / Liquidity (3 signals)
-        de_num = inv_info.get("debtToEquity", 100) or 100
-        if de_num < 100: pio_score += 1; pio_details.append(("부채비율 감소" if lang_inv=="ko" else "Leverage↓", True))
-        else: pio_details.append(("부채비율 감소" if lang_inv=="ko" else "Leverage↓", False))
-        cr_v = inv_info.get("currentRatio", 0) or 0
-        if cr_v > 1.5: pio_score += 1; pio_details.append(("유동비율 양호" if lang_inv=="ko" else "Liquidity OK", True))
-        else: pio_details.append(("유동비율 양호" if lang_inv=="ko" else "Liquidity OK", False))
-        pio_details.append(("주식희석 없음" if lang_inv=="ko" else "No dilution", None))  # simplified
-        # Operating Efficiency (2 signals)
-        gm = inv_info.get("grossMargins", 0) or 0
-        if gm > 0.3: pio_score += 1; pio_details.append(("매출총이익률 양호" if lang_inv=="ko" else "Gross Margin OK", True))
-        else: pio_details.append(("매출총이익률 양호" if lang_inv=="ko" else "Gross Margin OK", False))
-        at = inv_info.get("assetTurnover") or (inv_info.get("totalRevenue", 0) / total_assets if total_assets else None)
-        if at and at > 0.5: pio_score += 1; pio_details.append(("자산회전율 양호" if lang_inv=="ko" else "Asset Turnover OK", True))
-        else: pio_details.append(("자산회전율 양호" if lang_inv=="ko" else "Asset Turnover OK", False))
-
-        pio_color = "#00D4AA" if pio_score >= 7 else "#FFA500" if pio_score >= 4 else "#FF4B4B"
-        pio_label = ("강한 매수 신호" if pio_score >= 7 else "중립" if pio_score >= 4 else "약세 신호") if lang_inv=="ko" else ("Strong Buy Signal" if pio_score >= 7 else "Neutral" if pio_score >= 4 else "Weak Signal")
-        details_html = " ".join([
-            f"<span style='color:{'#00D4AA' if ok else '#FF4B4B' if ok is not None else '#8B9DB0'};font-size:0.72rem;'>{'✓' if ok else '✗' if ok is not None else '?'} {d}</span>"
-            for d, ok in pio_details
-        ])
-        st.markdown(f"""
-        <div class='geo-card'>
-            <div style='font-weight:700;color:#AB63FA;font-size:1rem;'>{gl("Piotroski F-Score", "📊 피오트로스키 F-스코어")}</div>
-            <div style='font-size:0.82rem;color:#B0BEC5;margin:6px 0;'>
-                {"재무 건전성 9개 항목 평가 (0~9점)" if lang_inv=="ko" else "9-point financial health scoring (0–9)"}
-            </div>
-            <div style='font-size:2rem;font-weight:800;color:{pio_color};'>{pio_score} <span style='font-size:1rem;'>/9</span></div>
-            <div style='font-size:0.88rem;color:{pio_color};font-weight:600;'>{pio_label}</div>
-            <div style='margin-top:8px;line-height:1.8;'>{details_html}</div>
-        </div>
-        """, unsafe_allow_html=True)
-
-    # Row 2: Altman Z-Score + Magic Formula
-    az_col, mf_col = st.columns(2)
-
-    with az_col:
-        # Altman Z-Score (simplified for large public companies)
-        shares_out = inv_info.get("sharesOutstanding", 0) or 0
-        try:
-            mkt_cap_z = curr_pr * shares_out if curr_pr and shares_out else (mkt_cap_v or 0)
-            ta = float(inv_info.get("totalAssets", 1) or 1)
-            wc = float((inv_info.get("totalCurrentAssets", 0) or 0) - (inv_info.get("totalCurrentLiabilities", 0) or 0))
-            re = float(inv_info.get("retainedEarnings", 0) or 0)
-            ebit_z = float(inv_info.get("ebit", 0) or 0)
-            td = float(inv_info.get("totalDebt", 0) or 0)
-            rev_z = float(inv_info.get("totalRevenue", 0) or 0)
-            if ta > 0 and td > 0:
-                X1 = wc / ta
-                X2 = re / ta
-                X3 = ebit_z / ta
-                X4 = mkt_cap_z / td
-                X5 = rev_z / ta
-                z_score = 1.2*X1 + 1.4*X2 + 3.3*X3 + 0.6*X4 + 1.0*X5
-                z_color = "#00D4AA" if z_score > 3 else "#FFA500" if z_score > 1.8 else "#FF4B4B"
-                z_label = ("안전 구간" if z_score > 3 else "회색 지대" if z_score > 1.8 else "위험 구간") if lang_inv=="ko" else ("Safe Zone" if z_score > 3 else "Grey Zone" if z_score > 1.8 else "Distress Zone")
-                z_str = f"{z_score:.2f}"
-            else:
-                z_str, z_color, z_label = "N/A", "#8B9DB0", "데이터 부족" if lang_inv=="ko" else "Insufficient data"
-        except Exception:
-            z_str, z_color, z_label = "N/A", "#8B9DB0", "계산 오류" if lang_inv=="ko" else "Calc error"
-
-        az_col.markdown(f"""
-        <div class='geo-card'>
-            <div style='font-weight:700;color:#FF8C00;font-size:1rem;'>{gl("Altman Z-Score", "⚠️ 알트만 Z-스코어")}</div>
-            <div style='font-size:0.82rem;color:#B0BEC5;margin:6px 0;'>
-                {"부도 위험 예측 모델 | 3↑ 안전, 1.8~3 회색지대, 1.8↓ 위험" if lang_inv=="ko" else "Bankruptcy prediction model | >3 safe, 1.8-3 grey, <1.8 distress"}
-            </div>
-            <div style='font-size:2rem;font-weight:800;color:{z_color};'>{z_str}</div>
-            <div style='font-size:0.9rem;color:{z_color};font-weight:600;'>{z_label}</div>
-            <div style='font-size:0.78rem;color:#6B7A8D;margin-top:6px;'>
-                {"공식: 1.2×유동자본/자산 + 1.4×유보이익/자산 + 3.3×EBIT/자산 + 0.6×시총/부채 + 매출/자산" if lang_inv=="ko"
-                 else "Formula: 1.2×WC/TA + 1.4×RE/TA + 3.3×EBIT/TA + 0.6×MktCap/Debt + Rev/TA"}
-            </div>
-        </div>
-        """, unsafe_allow_html=True)
-
-    with mf_col:
-        # Magic Formula (Joel Greenblatt): high ROIC + low EV/EBIT
-        try:
-            ev = inv_info.get("enterpriseValue", 0) or 0
-            ebit_mf = inv_info.get("ebit", 0) or 0
-            ev_ebit = ev / ebit_mf if ebit_mf and ebit_mf > 0 and ev > 0 else None
-            roic_mf = roic_val
-            if ev_ebit and roic_mf:
-                # Simplified rank: lower ev_ebit + higher roic = better
-                mf_score_str = f"EV/EBIT: {ev_ebit:.1f}x | ROIC: {roic_mf*100:.1f}%"
-                mf_good = ev_ebit < 15 and roic_mf > 0.15
-                mf_ok = ev_ebit < 25 and roic_mf > 0.08
-                mf_color = "#00D4AA" if mf_good else "#FFA500" if mf_ok else "#FF4B4B"
-                mf_label = ("매력적" if mf_good else "보통" if mf_ok else "비매력적") if lang_inv=="ko" else ("Attractive" if mf_good else "Neutral" if mf_ok else "Unattractive")
-            else:
-                mf_score_str = "N/A"
-                mf_color = "#8B9DB0"
-                mf_label = "데이터 부족" if lang_inv=="ko" else "Insufficient data"
-        except Exception:
-            mf_score_str = "N/A"
-            mf_color = "#8B9DB0"
-            mf_label = "계산 오류" if lang_inv=="ko" else "Calc error"
-
-        mf_col.markdown(f"""
-        <div class='geo-card'>
-            <div style='font-weight:700;color:#64B5F6;font-size:1rem;'>{gl("Magic Formula", "✨ 매직 포뮬러 (그린블라트)")}</div>
-            <div style='font-size:0.82rem;color:#B0BEC5;margin:6px 0;'>
-                {"높은 ROIC + 낮은 EV/EBIT = 저평가 고수익 기업 선별" if lang_inv=="ko" else "High ROIC + Low EV/EBIT = undervalued high-quality company"}
-            </div>
-            <div style='font-size:1.3rem;font-weight:700;color:{mf_color};'>{mf_score_str}</div>
-            <div style='font-size:0.9rem;color:{mf_color};font-weight:600;margin-top:4px;'>{mf_label}</div>
-            <div style='font-size:0.78rem;color:#6B7A8D;margin-top:6px;'>
-                {"EV/EBIT 15↓ + ROIC 15%↑ = 강한 매수 신호" if lang_inv=="ko" else "EV/EBIT < 15 + ROIC > 15% = strong buy signal"}
-            </div>
-        </div>
-        """, unsafe_allow_html=True)
-
-    # ── Section 7: DCF Simplified ──
-    st.markdown("<br>", unsafe_allow_html=True)
-    st.markdown(f"### {gl('DCF', '🔢 DCF 간이 내재가치 분석' if lang_inv=='ko' else '🔢 Simplified DCF Intrinsic Value')}", unsafe_allow_html=True)
-
-    dcf_col1, dcf_col2 = st.columns([2, 1])
-    with dcf_col1:
-        try:
-            fcf_dcf = fcf_val or (op_cf + capex if op_cf else None)
-            if fcf_dcf and fcf_dcf > 0 and shares_out > 0:
-                # DCF with 3-stage growth
-                wacc = 0.09  # typical 9% WACC
-                g1 = min(max(float(rev_growth or 0.05), 0.01), 0.30)  # Stage 1: current growth (capped)
-                g2 = g1 * 0.5  # Stage 2: half of current growth
-                g3 = 0.025    # Terminal growth rate
-
-                pv = 0
-                cf = fcf_dcf
-                for yr in range(1, 6):   # Stage 1: 5 years
-                    cf *= (1 + g1)
-                    pv += cf / (1 + wacc)**yr
-                for yr in range(6, 11):  # Stage 2: 5 years
-                    cf *= (1 + g2)
-                    pv += cf / (1 + wacc)**yr
-                terminal = cf * (1 + g3) / (wacc - g3)
-                pv += terminal / (1 + wacc)**10
-
-                dcf_per_share = pv / shares_out
-                margin_of_safety = (dcf_per_share - curr_pr) / curr_pr * 100 if curr_pr else 0
-                dcf_color = "#00D4AA" if margin_of_safety > 20 else "#FFA500" if margin_of_safety > -20 else "#FF4B4B"
-                dcf_signal = ("매수 유망 (안전마진 확보)" if margin_of_safety > 20 else "적정 가격" if margin_of_safety > -20 else "고평가 주의") if lang_inv=="ko" else ("Attractive (margin of safety)" if margin_of_safety > 20 else "Fairly valued" if margin_of_safety > -20 else "Potentially overvalued")
-
-                st.markdown(f"""
-                <div class='prediction-card' style='text-align:left;'>
-                    <div style='display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:16px;'>
-                        <div>
-                            <div style='color:#8B9DB0;font-size:0.85rem;margin-bottom:4px;'>{"DCF 내재가치 (주당)" if lang_inv=="ko" else "DCF Intrinsic Value (per share)"}</div>
-                            <div style='font-size:2rem;font-weight:800;color:{dcf_color};'>${dcf_per_share:,.2f}</div>
-                            <div style='font-size:0.9rem;color:{dcf_color};margin-top:4px;'>{dcf_signal}</div>
-                        </div>
-                        <div>
-                            <div style='color:#8B9DB0;font-size:0.85rem;'>{"현재가" if lang_inv=="ko" else "Current Price"}</div>
-                            <div style='font-size:1.4rem;font-weight:700;color:#FFFFFF;'>${curr_pr:,.2f}</div>
-                            <div style='font-size:0.85rem;color:{dcf_color};'>{margin_of_safety:+.1f}% {"괴리" if lang_inv=="ko" else "deviation"}</div>
-                        </div>
-                        <div>
-                            <div style='color:#8B9DB0;font-size:0.8rem;'>{"가정 (WACC / 성장률1 / 성장률2 / 영구)" if lang_inv=="ko" else "Assumptions (WACC / G1 / G2 / Terminal)"}</div>
-                            <div style='font-size:0.85rem;color:#B0BEC5;'>{wacc*100:.1f}% / {g1*100:.1f}% / {g2*100:.1f}% / {g3*100:.1f}%</div>
-                            <div style='font-size:0.78rem;color:#6B7A8D;margin-top:4px;'>{"※ 단순화된 추정치. 실제 투자 시 전문가 분석 필요" if lang_inv=="ko" else "⚠ Simplified estimate. Consult expert before investing"}</div>
-                        </div>
-                    </div>
-                </div>
-                """, unsafe_allow_html=True)
-            else:
-                st.info("FCF가 0 이하이거나 데이터 부족으로 DCF 계산이 불가합니다." if lang_inv=="ko" else "Cannot compute DCF: FCF ≤ 0 or insufficient data.")
-        except Exception as e:
-            st.info(f"DCF 계산 중 오류: {e}" if lang_inv=="ko" else f"DCF calculation error: {e}")
-
-    with dcf_col2:
-        st.markdown(f"""
-        <div class='summary-box' style='height:100%;'>
-            <div style='font-weight:700;color:#FFA500;margin-bottom:8px;'>{gl("DCF", "DCF 모델이란?")}</div>
-            <div style='font-size:0.82rem;color:#B0BEC5;line-height:1.7;'>
-                {"• 미래 잉여현금흐름을 현재 가치로 할인<br>• 3단계 성장 모델 적용<br>• 1~5년: 현재 성장률 유지<br>• 6~10년: 절반으로 감속<br>• 10년 이후: 영구성장률 2.5%<br>• WACC 9% 가정 (시장 평균)<br><br><span style='color:#FF8C00;'>⚠ 단순화된 모델로 참고용만 사용" if lang_inv=="ko" else
-                "• Discounts future free cash flows<br>• 3-stage growth model<br>• Yr 1-5: Current growth rate<br>• Yr 6-10: Half of current growth<br>• Beyond 10: 2.5% terminal growth<br>• WACC assumed at 9%<br><br><span style='color:#FF8C00;'>⚠ Simplified model — reference only"}</span>
-            </div>
-        </div>
-        """, unsafe_allow_html=True)
-
-    # ── Section 8: Multi-Model Fair Value Analysis ──
-    st.markdown("<br>", unsafe_allow_html=True)
-    st.markdown(f"### {'🎯 적정 주가 종합 분석 (멀티 밸류에이션)' if lang_inv=='ko' else '🎯 Fair Value Analysis — Multi-Model'}", unsafe_allow_html=True)
-    st.markdown(f"<small style='color:#8B9DB0;'>{'6가지 밸류에이션 모델로 적정가를 산출하고 현재가와 괴리를 분석합니다' if lang_inv=='ko' else '6 valuation models to estimate fair value and explain the gap from current price'}</small>", unsafe_allow_html=True)
-    st.markdown("<br>", unsafe_allow_html=True)
-
-    _curr = curr_pr or 0
-    fv_methods = []  # list of (method_name, fair_value, weight, color, description)
-
-    # 1) PER-based: industry-avg P/E × trailing EPS
-    _eps_t = inv_info.get("trailingEps") or 0
-    _per_fwd = inv_info.get("forwardPE")
-    _per_trail = inv_info.get("trailingPE")
-    # Use sector median P/E heuristic (technology ≈ 25, broad market ≈ 18)
-    _sector_pe = 25.0 if "tech" in (inv_info.get("sector","") or "").lower() else 20.0
-    _fv_per = _sector_pe * _eps_t if _eps_t and _eps_t > 0 else None
-
-    # 2) PBR-based: sector-avg P/B × book value per share
-    _bps = inv_info.get("bookValue") or 0
-    _sector_pb = 4.0 if "tech" in (inv_info.get("sector","") or "").lower() else 2.5
-    _fv_pbr = _sector_pb * _bps if _bps and _bps > 0 else None
-
-    # 3) P/S-based: sector-avg P/S × revenue per share
-    _rev = inv_info.get("totalRevenue") or 0
-    _shares = inv_info.get("sharesOutstanding") or 1
-    _rev_ps = _rev / _shares if _shares else 0
-    _sector_ps = 8.0 if "tech" in (inv_info.get("sector","") or "").lower() else 2.0
-    _fv_ps = _sector_ps * _rev_ps if _rev_ps else None
-
-    # 4) EV/EBITDA-based
-    _ebitda = inv_info.get("ebitda") or 0
-    _td2 = inv_info.get("totalDebt") or 0
-    _cash = inv_info.get("totalCash") or 0
-    _sector_ev_ebitda = 20.0 if "tech" in (inv_info.get("sector","") or "").lower() else 12.0
-    if _ebitda and _ebitda > 0 and _shares:
-        _ev_fair = _sector_ev_ebitda * _ebitda
-        _eq_fair = _ev_fair - _td2 + _cash
-        _fv_evebitda = _eq_fair / _shares if _eq_fair > 0 else None
-    else:
-        _fv_evebitda = None
-
-    # 5) Graham Number
-    _fv_graham = graham  # already computed above (may be None)
-
-    # 6) DCF
-    try:
-        _fv_dcf = dcf_per_share if 'dcf_per_share' in dir() else None
-    except Exception:
-        _fv_dcf = None
-
-    # 7) Analyst consensus
-    _fv_analyst = inv_info.get("targetMeanPrice") or None
-    _fv_analyst_low  = inv_info.get("targetLowPrice") or None
-    _fv_analyst_high = inv_info.get("targetHighPrice") or None
-
-    # Build table
-    _methods_raw = [
-        ("PER 기반" if lang_inv=="ko" else "P/E Based",       _fv_per,      1.5, "#FFA500",
-         f"섹터 평균 PER {_sector_pe:.0f}배 × EPS({_eps_t:.2f})" if lang_inv=="ko"
-         else f"Sector avg P/E {_sector_pe:.0f}x × EPS({_eps_t:.2f})"),
-        ("PBR 기반" if lang_inv=="ko" else "P/B Based",       _fv_pbr,      1.0, "#64B5F6",
-         f"섹터 평균 PBR {_sector_pb:.1f}배 × BPS({_bps:.2f})" if lang_inv=="ko"
-         else f"Sector avg P/B {_sector_pb:.1f}x × BPS({_bps:.2f})"),
-        ("P/S 기반" if lang_inv=="ko" else "P/S Based",       _fv_ps,       0.8, "#AB63FA",
-         f"섹터 평균 P/S {_sector_ps:.1f}배 × 주당매출({_rev_ps:.2f})" if lang_inv=="ko"
-         else f"Sector avg P/S {_sector_ps:.1f}x × RevPS({_rev_ps:.2f})"),
-        ("EV/EBITDA 기반" if lang_inv=="ko" else "EV/EBITDA",  _fv_evebitda, 1.2, "#FF8C00",
-         f"섹터 평균 EV/EBITDA {_sector_ev_ebitda:.0f}배 적용" if lang_inv=="ko"
-         else f"Sector avg EV/EBITDA {_sector_ev_ebitda:.0f}x applied"),
-        ("그레이엄 넘버" if lang_inv=="ko" else "Graham Number", _fv_graham,  1.0, "#FFD700",
-         "√(22.5 × EPS × BPS) — 안전마진 기준"),
-        ("DCF 내재가치" if lang_inv=="ko" else "DCF Value",    _fv_dcf,      2.0, "#00D4AA",
-         "3단계 성장 DCF 모델 (WACC 9%)" if lang_inv=="ko" else "3-stage DCF model (WACC 9%)"),
-        ("애널리스트 목표가" if lang_inv=="ko" else "Analyst Target", _fv_analyst, 1.5, "#E91E8C",
-         f"기관 애널리스트 평균 목표가 (범위: ${_fv_analyst_low or '?'}~${_fv_analyst_high or '?'})" if lang_inv=="ko"
-         else f"Consensus analyst target (range: ${_fv_analyst_low or '?'}~${_fv_analyst_high or '?'})"),
-    ]
-    _valid = [(n, v, w, c, d) for n, v, w, c, d in _methods_raw if v and v > 0]
-
-    if _valid and _curr > 0:
-        # Weighted average fair value
-        _total_w = sum(w for _, _, w, _, _ in _valid)
-        _wavg_fv = sum(v * w for _, v, w, _, _ in _valid) / _total_w
-        _simple_avg = sum(v for _, v, _, _, _ in _valid) / len(_valid)
-        _gap_pct = (_wavg_fv - _curr) / _curr * 100
-        _gap_color = "#FF4040" if _gap_pct > 10 else "#4488FF" if _gap_pct < -10 else "#FFA500"
-        _gap_label = (
-            ("🟢 저평가 — 매수 고려 구간" if _gap_pct > 20
-             else "🟡 약간 저평가" if _gap_pct > 10
-             else "🟡 적정 가격 근접" if _gap_pct > -10
-             else "🟠 약간 고평가" if _gap_pct > -20
-             else "🔴 고평가 — 주의 구간")
-            if lang_inv == "ko" else
-            ("🟢 Undervalued — Consider buying" if _gap_pct > 20
-             else "🟡 Slightly undervalued" if _gap_pct > 10
-             else "🟡 Near fair value" if _gap_pct > -10
-             else "🟠 Slightly overvalued" if _gap_pct > -20
-             else "🔴 Overvalued — Caution")
-        )
-
-        # ── Summary banner ──
-        _min_fv = min(v for _, v, _, _, _ in _valid)
-        _max_fv = max(v for _, v, _, _, _ in _valid)
-        st.markdown(f"""
-        <div style='background:linear-gradient(135deg,#1A1F35,#0F1527);border:2px solid {_gap_color};
-                    border-radius:14px;padding:20px 28px;margin-bottom:20px;'>
-            <div style='display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:16px;'>
-                <div>
-                    <div style='font-size:0.82rem;color:#8B9DB0;margin-bottom:4px;'>
-                        {"가중평균 적정주가 (" + str(len(_valid)) + "개 모델)" if lang_inv=="ko"
-                         else "Weighted Avg Fair Value (" + str(len(_valid)) + " models)"}
-                    </div>
-                    <div style='font-size:2.4rem;font-weight:900;color:{_gap_color};'>${_wavg_fv:,.2f}</div>
-                    <div style='font-size:1rem;color:{_gap_color};font-weight:700;margin-top:4px;'>{_gap_label}</div>
-                </div>
-                <div>
-                    <div style='font-size:0.82rem;color:#8B9DB0;'>{"현재가" if lang_inv=="ko" else "Current Price"}</div>
-                    <div style='font-size:1.8rem;font-weight:800;color:#FFFFFF;'>${_curr:,.2f}</div>
-                    <div style='font-size:1.1rem;font-weight:700;color:{_gap_color};margin-top:4px;'>{_gap_pct:+.1f}% {"괴리율" if lang_inv=="ko" else "gap"}</div>
-                </div>
-                <div>
-                    <div style='font-size:0.82rem;color:#8B9DB0;'>{"적정가 범위" if lang_inv=="ko" else "Fair Value Range"}</div>
-                    <div style='font-size:1rem;color:#B0BEC5;margin-top:4px;'>${_min_fv:,.2f} ~ ${_max_fv:,.2f}</div>
-                    <div style='font-size:0.82rem;color:#8B9DB0;margin-top:4px;'>{"단순 평균" if lang_inv=="ko" else "Simple avg"}: ${_simple_avg:,.2f}</div>
-                </div>
-            </div>
-        </div>
-        """, unsafe_allow_html=True)
-
-        # ── Method-by-method table + bar chart ──
-        fv_chart_col, fv_table_col = st.columns([3, 2])
-
-        with fv_chart_col:
-            fig_fv = go.Figure()
-            names_fv = [n for n, _, _, _, _ in _valid]
-            vals_fv  = [v for _, v, _, _, _ in _valid]
-            colors_fv = [c for _, _, _, c, _ in _valid]
-            gaps_fv   = [(v - _curr) / _curr * 100 for v in vals_fv]
-
-            fig_fv.add_trace(go.Bar(
-                x=names_fv, y=vals_fv,
-                marker_color=colors_fv,
-                text=[f"${v:,.0f}<br>{g:+.1f}%" for v, g in zip(vals_fv, gaps_fv)],
-                textposition="outside",
-                hovertemplate="<b>%{x}</b><br>적정가: $%{y:,.2f}<br>괴리: %{text}<extra></extra>",
-            ))
-            # Current price line
-            fig_fv.add_hline(
-                y=_curr, line_dash="dash", line_color="#FFFFFF", line_width=2,
-                annotation_text=f"  현재가 ${_curr:,.2f}" if lang_inv=="ko" else f"  Current ${_curr:,.2f}",
-                annotation_font_color="#FFFFFF",
-            )
-            # Weighted avg line
-            fig_fv.add_hline(
-                y=_wavg_fv, line_dash="dot", line_color=_gap_color, line_width=2,
-                annotation_text=f"  적정가 ${_wavg_fv:,.2f}" if lang_inv=="ko" else f"  Fair Value ${_wavg_fv:,.2f}",
-                annotation_font_color=_gap_color,
-            )
-            fig_fv.update_layout(
-                template="plotly_dark",
-                height=380,
-                title=f"{'모델별 적정가 vs 현재가' if lang_inv=='ko' else 'Fair Value by Model vs Current Price'}",
-                margin=dict(l=0, r=0, t=50, b=0),
-                plot_bgcolor="#0E1117", paper_bgcolor="#0E1117",
-                yaxis_title="Price (USD)" if lang_inv=="en" else "주가 (USD)",
-                showlegend=False,
-            )
-            st.plotly_chart(fig_fv, use_container_width=True)
-
-        with fv_table_col:
-            st.markdown(f"<div style='font-weight:700;color:#FFA500;margin-bottom:10px;'>{'모델별 상세' if lang_inv=='ko' else 'Model Detail'}</div>", unsafe_allow_html=True)
-            for n, v, w, c, desc in _valid:
-                _g = (v - _curr) / _curr * 100
-                _g_c = "#FF4040" if _g > 0 else "#4488FF"
-                st.markdown(f"""
-                <div style='background:#1A1F35;border-left:3px solid {c};border-radius:0 8px 8px 0;
-                            padding:10px 14px;margin-bottom:8px;'>
-                    <div style='display:flex;justify-content:space-between;align-items:center;'>
-                        <span style='font-weight:700;color:{c};font-size:0.85rem;'>{n}</span>
-                        <span style='font-size:1rem;font-weight:800;color:#FFFFFF;'>${v:,.2f}</span>
-                    </div>
-                    <div style='display:flex;justify-content:space-between;margin-top:4px;'>
-                        <span style='color:#8B9DB0;font-size:0.72rem;'>{desc[:40]}{"..." if len(desc)>40 else ""}</span>
-                        <span style='color:{_g_c};font-size:0.82rem;font-weight:700;'>{_g:+.1f}%</span>
-                    </div>
-                </div>
-                """, unsafe_allow_html=True)
-
-        # ── Gap analysis explanation ──
+if _show_tabs:
+    with tabs[7]:
+        lang_inv = st.session_state.lang
+        st.markdown(f"<div class='section-header'>{'📈 투자 분석 대시보드' if lang_inv=='ko' else '📈 Investment Analysis Dashboard'}</div>", unsafe_allow_html=True)
+        st.markdown(f"<small style='color:#8B9DB0;'>{'실시간 yFinance 데이터 기반 | 투자 결정은 전문가와 상담하세요' if lang_inv=='ko' else 'Real-time yFinance data | Consult a professional before investing'}</small>", unsafe_allow_html=True)
         st.markdown("<br>", unsafe_allow_html=True)
-        st.markdown(f"<div class='section-header'>{'🔍 괴리율 원인 분석' if lang_inv=='ko' else '🔍 Gap Analysis'}</div>", unsafe_allow_html=True)
 
-        def _gap_explanation(gap_pct, inv_info, lang_inv, per, pbr, roe, rev_growth, fcf_val):
-            reasons = []
-            if gap_pct > 20:
-                reasons.append("📉 " + ("현재 주가가 여러 밸류에이션 모델 대비 크게 저평가되어 있습니다. 시장이 단기 악재를 과도하게 반영했거나, 아직 성장 잠재력이 충분히 인정받지 못했을 가능성이 있습니다." if lang_inv=="ko" else "The stock appears significantly undervalued vs. multiple models. The market may be over-pricing short-term risks or the growth potential may not yet be fully recognized."))
-            elif gap_pct > 5:
-                reasons.append("📊 " + ("현재가가 적정가보다 다소 낮습니다. 단기 모멘텀 부재나 섹터 전반의 약세가 원인일 수 있습니다." if lang_inv=="ko" else "Price is slightly below fair value. Short-term momentum weakness or sector-wide selling pressure may be the cause."))
-            elif gap_pct > -5:
-                reasons.append("⚖️ " + ("현재 주가가 여러 모델의 적정가와 거의 일치합니다. 시장이 적절히 가격을 반영한 상태입니다." if lang_inv=="ko" else "Current price is well-aligned with multi-model fair values. The market appears to be pricing the stock fairly."))
-            elif gap_pct > -20:
-                reasons.append("📈 " + ("현재가가 적정가보다 높습니다. 성장 프리미엄·브랜드 가치 등이 반영됐거나 시장 과열 신호일 수 있습니다." if lang_inv=="ko" else "Price is above fair value. Growth premium, brand value, or market exuberance may be reflected."))
-            else:
-                reasons.append("🚨 " + ("현재 주가가 대부분의 밸류에이션 모델 대비 크게 고평가되어 있습니다. 투자 시 주의가 필요합니다." if lang_inv=="ko" else "The stock appears significantly overvalued vs. most models. Caution is advised."))
+        # Fetch fresh financials
+        inv_info = info  # reuse already loaded info dict
 
-            # Specific factor analysis
-            if per and float(per) > 40:
-                reasons.append("🔺 " + (f"PER {float(per):.1f}배로 업종 평균 대비 높아 성장 기대감이 주가에 선반영된 상태입니다." if lang_inv=="ko"
-                               else f"P/E of {float(per):.1f}x is above sector avg — high growth expectations are priced in."))
-            if pbr and float(pbr) > 5:
-                reasons.append("🔺 " + (f"PBR {float(pbr):.1f}배로 강력한 무형자산(브랜드·기술·특허) 가치가 반영된 것으로 해석됩니다." if lang_inv=="ko"
-                               else f"P/B of {float(pbr):.1f}x suggests strong intangible assets (brand/tech/IP) are priced in."))
-            if roe and float(roe) * 100 > 20:
-                reasons.append("✅ " + (f"ROE {float(roe)*100:.1f}%의 높은 수익성이 프리미엄 밸류에이션을 정당화합니다." if lang_inv=="ko"
-                               else f"ROE of {float(roe)*100:.1f}% justifies premium valuation."))
-            if rev_growth and float(rev_growth) * 100 > 20:
-                reasons.append("✅ " + (f"매출 성장률 {float(rev_growth)*100:.1f}%의 고성장이 현재 주가를 지지합니다." if lang_inv=="ko"
-                               else f"{float(rev_growth)*100:.1f}% revenue growth supports the current price level."))
-            if fcf_val and fcf_val < 0:
-                reasons.append("⚠️ " + ("FCF가 마이너스로 성장 투자 단계의 기업입니다. 미래 수익성에 대한 신뢰가 가격 결정의 핵심입니다." if lang_inv=="ko"
-                               else "Negative FCF indicates a growth-stage company. Future profitability expectations drive the price."))
+        def safe(val, fmt=None, suffix=""):
+            if val is None or val == "N/A" or (isinstance(val, float) and (val != val)):
+                return "N/A"
+            try:
+                if fmt == "pct":
+                    return f"{float(val)*100:.1f}%"
+                elif fmt == "x":
+                    return f"{float(val):.2f}x"
+                elif fmt == "f2":
+                    return f"{float(val):.2f}"
+                elif fmt == "big":
+                    v = float(val)
+                    if abs(v) >= 1e12: return f"${v/1e12:.2f}T"
+                    if abs(v) >= 1e9:  return f"${v/1e9:.1f}B"
+                    if abs(v) >= 1e6:  return f"${v/1e6:.0f}M"
+                    return f"${v:,.0f}"
+                else:
+                    return str(val)
+            except Exception:
+                return "N/A"
 
-            analyst_tgt = inv_info.get("targetMeanPrice")
-            n_analysts  = inv_info.get("numberOfAnalystOpinions") or 0
-            if analyst_tgt and n_analysts:
-                reasons.append("📋 " + (f"총 {n_analysts}명의 애널리스트 평균 목표가는 ${analyst_tgt:,.2f}입니다." if lang_inv=="ko"
-                               else f"{n_analysts} analysts have an average target of ${analyst_tgt:,.2f}."))
-            return reasons
+        # ── Section 1: Valuation ──
+        st.markdown(f"### {gl('PER', '💰 가치평가 (Valuation)' if lang_inv=='ko' else '💰 Valuation')}", unsafe_allow_html=True)
 
-        _reasons = _gap_explanation(_gap_pct, inv_info, lang_inv, per, pbr, roe, rev_growth, fcf_val)
-        for r in _reasons:
-            st.markdown(f"""
-            <div style='background:#1A1F35;border-left:3px solid {_gap_color};border-radius:0 8px 8px 0;
-                        padding:10px 16px;margin-bottom:8px;font-size:0.88rem;color:#E0E0E0;line-height:1.6;'>
-                {r}
+        per  = inv_info.get("trailingPE") or inv_info.get("forwardPE")
+        pbr  = inv_info.get("priceToBook")
+        peg  = inv_info.get("pegRatio")
+        ps   = inv_info.get("priceToSalesTrailing12Months")
+        ev_ebitda = inv_info.get("enterpriseToEbitda")
+
+        val_metrics = [
+            ("PER", safe(per, "f2"), "PER", "낮을수록 저평가" if lang_inv=="ko" else "Lower = undervalued"),
+            ("PBR", safe(pbr, "f2"), "PBR", "1 미만 = 자산 대비 저평가" if lang_inv=="ko" else "< 1 = below book value"),
+            ("PEG", safe(peg, "f2"), "PEG", "1 미만 = 성장 대비 저평가" if lang_inv=="ko" else "< 1 = undervalued vs growth"),
+            ("P/S", safe(ps, "f2"), "P/S Ratio", "낮을수록 매출 대비 저평가" if lang_inv=="ko" else "Lower = cheaper vs sales"),
+            ("EV/EBITDA", safe(ev_ebitda, "f2"), "EV/EBITDA", "10 미만 = 저평가 기준" if lang_inv=="ko" else "Below 10 = generally cheap"),
+        ]
+
+        v_cols = st.columns(5)
+        for col, (name, val, gl_key, hint) in zip(v_cols, val_metrics):
+            try:
+                fval = float(val.replace("x","").replace("%","")) if val != "N/A" else None
+            except Exception:
+                fval = None
+            # Color coding
+            color = "#8B9DB0"
+            if name == "PER" and fval is not None:
+                color = "#00D4AA" if fval < 15 else "#FFA500" if fval < 30 else "#FF4B4B"
+            elif name == "PBR" and fval is not None:
+                color = "#00D4AA" if fval < 1 else "#FFA500" if fval < 3 else "#FF4B4B"
+            elif name == "PEG" and fval is not None:
+                color = "#00D4AA" if fval < 1 else "#FFA500" if fval < 2 else "#FF4B4B"
+            elif name == "EV/EBITDA" and fval is not None:
+                color = "#00D4AA" if fval < 10 else "#FFA500" if fval < 20 else "#FF4B4B"
+            col.markdown(f"""
+            <div class='metric-card'>
+                <div class='metric-label'>{gl(gl_key, name)}</div>
+                <div style='font-size:1.4rem;font-weight:700;color:{color};'>{val}</div>
+                <div style='font-size:0.72rem;color:#6B7A8D;margin-top:4px;'>{hint}</div>
             </div>
             """, unsafe_allow_html=True)
 
-        st.markdown(f"""
-        <div style='background:#0D1120;border:1px solid #2E3250;border-radius:10px;padding:12px 16px;margin-top:8px;'>
-            <div style='font-size:0.78rem;color:#6B7A8D;'>
-                {"※ 적정가는 모델·가정에 따라 크게 달라집니다. 섹터 평균 배수는 시장 상황에 따라 변동되며, 본 분석은 참고용입니다." if lang_inv=="ko"
-                 else "⚠ Fair values vary significantly by model and assumptions. Sector multiples shift with market conditions. For reference only."}
+        # ── Section 2: Profitability ──
+        st.markdown("<br>", unsafe_allow_html=True)
+        st.markdown(f"### {'🏆 수익성 (Profitability)' if lang_inv=='ko' else '🏆 Profitability'}", unsafe_allow_html=True)
+
+        roe  = inv_info.get("returnOnEquity")
+        roa  = inv_info.get("returnOnAssets")
+        op_margin  = inv_info.get("operatingMargins")
+        net_margin = inv_info.get("profitMargins")
+        gross_margin = inv_info.get("grossMargins")
+
+        # ROIC approximation: Net Income / (Total Assets - Current Liabilities)
+        net_income = inv_info.get("netIncomeToCommon", 0) or 0
+        total_assets = inv_info.get("totalAssets", 0) or 0
+        curr_liab = inv_info.get("totalCurrentLiabilities", 0) or 0
+        roic_val = (net_income / (total_assets - curr_liab)) if (total_assets - curr_liab) > 0 else None
+
+        prof_metrics = [
+            ("ROE", safe(roe, "pct"), "ROE", "15%↑ 우수" if lang_inv=="ko" else "15%+ excellent"),
+            ("ROA", safe(roa, "pct"), "ROA", "5%↑ 양호" if lang_inv=="ko" else "5%+ good"),
+            ("ROIC", safe(roic_val, "pct") if roic_val else "N/A", "ROIC", "WACC 초과 시 가치창출" if lang_inv=="ko" else "Above WACC = value creation"),
+            ("영업이익률" if lang_inv=="ko" else "Op. Margin", safe(op_margin, "pct"), "Operating Margin", "높을수록 경쟁우위" if lang_inv=="ko" else "Higher = stronger moat"),
+            ("순이익률" if lang_inv=="ko" else "Net Margin", safe(net_margin, "pct"), "Net Margin", "순수 수익성" if lang_inv=="ko" else "Final profitability"),
+        ]
+
+        p_cols = st.columns(5)
+        for col, (name, val, gl_key, hint) in zip(p_cols, prof_metrics):
+            try:
+                fval = float(val.replace("%","")) if val != "N/A" else None
+            except Exception:
+                fval = None
+            color = "#8B9DB0"
+            if fval is not None:
+                color = "#00D4AA" if fval >= 15 else "#FFA500" if fval >= 5 else "#FF4B4B"
+            col.markdown(f"""
+            <div class='metric-card'>
+                <div class='metric-label'>{gl(gl_key, name)}</div>
+                <div style='font-size:1.4rem;font-weight:700;color:{color};'>{val}</div>
+                <div style='font-size:0.72rem;color:#6B7A8D;margin-top:4px;'>{hint}</div>
             </div>
+            """, unsafe_allow_html=True)
+
+        # ── Section 3: Growth ──
+        st.markdown("<br>", unsafe_allow_html=True)
+        st.markdown(f"### {'📈 성장성 (Growth)' if lang_inv=='ko' else '📈 Growth'}", unsafe_allow_html=True)
+
+        rev_growth   = inv_info.get("revenueGrowth")
+        earn_growth  = inv_info.get("earningsGrowth")
+        eps_trail    = inv_info.get("trailingEps")
+        eps_fwd      = inv_info.get("forwardEps")
+        eps_growth   = ((eps_fwd - eps_trail) / abs(eps_trail)) if eps_trail and eps_fwd and eps_trail != 0 else None
+        revenue_ttm  = inv_info.get("totalRevenue")
+        analyst_tgt  = inv_info.get("targetMeanPrice")
+        curr_pr      = inv_info.get("currentPrice") or inv_info.get("regularMarketPrice") or current_price
+        upside       = ((analyst_tgt - curr_pr) / curr_pr) if analyst_tgt and curr_pr else None
+
+        growth_metrics = [
+            ("매출 성장률" if lang_inv=="ko" else "Revenue Growth", safe(rev_growth, "pct"), "Revenue Growth", "YoY 성장" if lang_inv=="ko" else "YoY growth"),
+            ("순이익 성장률" if lang_inv=="ko" else "Earnings Growth", safe(earn_growth, "pct"), "EPS Growth", "YoY 이익 성장" if lang_inv=="ko" else "YoY earnings growth"),
+            ("EPS (TTM)", safe(eps_trail, "f2"), "EPS", "주당순이익" if lang_inv=="ko" else "Trailing 12M EPS"),
+            ("EPS (선행)" if lang_inv=="ko" else "EPS (Fwd)", safe(eps_fwd, "f2"), "EPS Growth", "예상 주당순이익" if lang_inv=="ko" else "Forward EPS estimate"),
+            ("애널리스트 목표가" if lang_inv=="ko" else "Analyst Target", f"${analyst_tgt:,.2f}" if analyst_tgt else "N/A", "EPS Growth",
+             f"상승 여력 {upside*100:.1f}%" if upside and upside>=0 and lang_inv=="ko"
+             else f"Upside {upside*100:.1f}%" if upside and upside>=0
+             else f"하락 여지 {abs(upside)*100:.1f}%" if upside and lang_inv=="ko"
+             else f"Downside {abs(upside)*100:.1f}%" if upside else "N/A"),
+        ]
+
+        g_cols = st.columns(5)
+        for col, (name, val, gl_key, hint) in zip(g_cols, growth_metrics):
+            try:
+                fval = float(val.replace("%","").replace("$","").replace(",","")) if val not in ("N/A","") else None
+            except Exception:
+                fval = None
+            color = "#8B9DB0"
+            if "성장" in name or "Growth" in name:
+                if fval is not None:
+                    color = "#00D4AA" if fval >= 10 else "#FFA500" if fval >= 0 else "#FF4B4B"
+            col.markdown(f"""
+            <div class='metric-card'>
+                <div class='metric-label'>{gl(gl_key, name)}</div>
+                <div style='font-size:1.3rem;font-weight:700;color:{color};'>{val}</div>
+                <div style='font-size:0.72rem;color:#6B7A8D;margin-top:4px;'>{hint}</div>
+            </div>
+            """, unsafe_allow_html=True)
+
+        # ── Section 4: Stability ──
+        st.markdown("<br>", unsafe_allow_html=True)
+        st.markdown(f"### {'🛡️ 안정성 (Stability)' if lang_inv=='ko' else '🛡️ Stability'}", unsafe_allow_html=True)
+
+        total_debt  = inv_info.get("totalDebt", 0) or 0
+        eq          = inv_info.get("totalStockholderEquity") or inv_info.get("bookValue", 0) or 0
+        de_ratio    = (total_debt / (eq * inv_info.get("sharesOutstanding", 1))) if eq and inv_info.get("sharesOutstanding") else inv_info.get("debtToEquity")
+        curr_ratio  = inv_info.get("currentRatio")
+        quick_ratio = inv_info.get("quickRatio")
+        ebit        = inv_info.get("ebit", 0) or 0
+        int_exp     = inv_info.get("interestExpense", 0) or 0
+        int_cov     = abs(ebit / int_exp) if int_exp and int_exp != 0 and ebit else None
+        beta_val    = inv_info.get("beta")
+
+        stab_metrics = [
+            ("부채비율" if lang_inv=="ko" else "Debt/Equity", safe(de_ratio, "f2"), "Debt/Equity", "낮을수록 안전" if lang_inv=="ko" else "Lower = safer"),
+            ("유동비율" if lang_inv=="ko" else "Current Ratio", safe(curr_ratio, "f2"), "Current Ratio", "1.5↑ 안전" if lang_inv=="ko" else "1.5+ healthy"),
+            ("당좌비율" if lang_inv=="ko" else "Quick Ratio", safe(quick_ratio, "f2"), "Current Ratio", "1.0↑ 양호" if lang_inv=="ko" else "1.0+ good"),
+            ("이자보상배율" if lang_inv=="ko" else "Interest Coverage", safe(int_cov, "f2") if int_cov else "N/A", "Interest Coverage", "3↑ 안전" if lang_inv=="ko" else "3+ safe"),
+            ("베타" if lang_inv=="ko" else "Beta", safe(beta_val, "f2"), "Beta vs S&P 500", "1 초과=고변동성" if lang_inv=="ko" else ">1 = more volatile"),
+        ]
+
+        s_cols = st.columns(5)
+        for col, (name, val, gl_key, hint) in zip(s_cols, stab_metrics):
+            try:
+                fval = float(val.replace("%","")) if val != "N/A" else None
+            except Exception:
+                fval = None
+            color = "#8B9DB0"
+            if "부채" in name or "Debt" in name:
+                if fval is not None:
+                    color = "#00D4AA" if fval < 1 else "#FFA500" if fval < 2 else "#FF4B4B"
+            elif "유동" in name or "Current" in name or "Quick" in name:
+                if fval is not None:
+                    color = "#00D4AA" if fval >= 1.5 else "#FFA500" if fval >= 1 else "#FF4B4B"
+            elif "이자" in name or "Interest" in name:
+                if fval is not None:
+                    color = "#00D4AA" if fval >= 3 else "#FFA500" if fval >= 1.5 else "#FF4B4B"
+            col.markdown(f"""
+            <div class='metric-card'>
+                <div class='metric-label'>{gl(gl_key, name)}</div>
+                <div style='font-size:1.4rem;font-weight:700;color:{color};'>{val}</div>
+                <div style='font-size:0.72rem;color:#6B7A8D;margin-top:4px;'>{hint}</div>
+            </div>
+            """, unsafe_allow_html=True)
+
+        # ── Section 5: Cash Flow ──
+        st.markdown("<br>", unsafe_allow_html=True)
+        st.markdown(f"### {'💵 현금흐름 (Cash Flow)' if lang_inv=='ko' else '💵 Cash Flow'}", unsafe_allow_html=True)
+
+        op_cf   = inv_info.get("operatingCashflow") or inv_info.get("totalCashFromOperatingActivities")
+        capex   = inv_info.get("capitalExpenditures", 0) or 0
+        fcf_val = (op_cf + capex) if op_cf else None  # capex is usually negative in yf
+        mkt_cap_v = inv_info.get("marketCap", 0) or 0
+        fcf_yield_v = (fcf_val / mkt_cap_v) if fcf_val and mkt_cap_v else None
+        div_yield   = inv_info.get("dividendYield")
+        payout_r    = inv_info.get("payoutRatio")
+        free_cf     = inv_info.get("freeCashflow")
+        if free_cf:
+            fcf_val = free_cf  # prefer direct FCF if available
+
+        cf_metrics = [
+            ("영업현금흐름" if lang_inv=="ko" else "Operating CF", safe(op_cf, "big"), "Operating CF", "실제 현금 창출력" if lang_inv=="ko" else "Real cash generation"),
+            ("FCF", safe(fcf_val, "big") if fcf_val else "N/A", "FCF", "주주 환원 여력" if lang_inv=="ko" else "Available for shareholders"),
+            ("FCF 수익률" if lang_inv=="ko" else "FCF Yield", safe(fcf_yield_v, "pct") if fcf_yield_v else "N/A", "FCF Yield", "높을수록 저평가" if lang_inv=="ko" else "Higher = undervalued"),
+            ("배당수익률" if lang_inv=="ko" else "Div. Yield", safe(div_yield, "pct") if div_yield else "무배당" if lang_inv=="ko" else "No dividend", "FCF", "현금 배당 비율" if lang_inv=="ko" else "Cash return to shareholders"),
+            ("배당성향" if lang_inv=="ko" else "Payout Ratio", safe(payout_r, "pct") if payout_r else "N/A", "FCF", "순이익 중 배당 비중" if lang_inv=="ko" else "% of earnings paid as dividend"),
+        ]
+
+        c_cols = st.columns(5)
+        for col, (name, val, gl_key, hint) in zip(c_cols, cf_metrics):
+            color = "#FFA500"
+            if "무배당" in str(val) or "No dividend" in str(val):
+                color = "#8B9DB0"
+            col.markdown(f"""
+            <div class='metric-card'>
+                <div class='metric-label'>{gl(gl_key, name)}</div>
+                <div style='font-size:1.2rem;font-weight:700;color:{color};'>{val}</div>
+                <div style='font-size:0.72rem;color:#6B7A8D;margin-top:4px;'>{hint}</div>
+            </div>
+            """, unsafe_allow_html=True)
+
+        # ── Section 6: Academic Models ──
+        st.markdown("<br>", unsafe_allow_html=True)
+        st.markdown(f"### {'🎓 학술 투자 모델 분석' if lang_inv=='ko' else '🎓 Academic Investment Models'}", unsafe_allow_html=True)
+
+        model_col1, model_col2 = st.columns(2)
+
+        # Graham Number
+        with model_col1:
+            eps_v = inv_info.get("trailingEps", 0) or 0
+            bps_v = inv_info.get("bookValue", 0) or 0
+            graham = None
+            if eps_v > 0 and bps_v > 0:
+                graham = (22.5 * eps_v * bps_v) ** 0.5
+            graham_str = f"${graham:,.2f}" if graham else "N/A (음수 EPS/BPS)"
+            upside_g = ((graham - curr_pr) / curr_pr * 100) if graham and curr_pr else None
+            g_color = "#00D4AA" if upside_g and upside_g > 0 else "#FF4B4B" if upside_g else "#8B9DB0"
+            graham_interpret = (
+                f"현재가 대비 {'저평가' if upside_g and upside_g>0 else '고평가'} {abs(upside_g):.1f}%" if upside_g else
+                ("EPS 또는 BPS가 음수여서 계산 불가" if lang_inv=="ko" else "Cannot compute: negative EPS or BPS")
+            )
+            st.markdown(f"""
+            <div class='geo-card'>
+                <div style='font-weight:700;color:#FFD700;font-size:1rem;'>{gl("Graham Number", "📐 그레이엄 넘버 (Graham Number)")}</div>
+                <div style='font-size:0.82rem;color:#B0BEC5;margin:6px 0;'>
+                    {"벤저민 그레이엄의 안전마진 계산: √(22.5 × EPS × BPS)" if lang_inv=="ko" else "Benjamin Graham's intrinsic value: √(22.5 × EPS × BPS)"}
+                </div>
+                <div style='font-size:1.6rem;font-weight:800;color:{g_color};'>{graham_str}</div>
+                <div style='font-size:0.85rem;color:#B0BEC5;margin-top:6px;'>{graham_interpret}</div>
+                <div style='font-size:0.78rem;color:#6B7A8D;margin-top:4px;'>EPS: {safe(eps_v,"f2")} | BPS: {safe(bps_v,"f2")}</div>
+            </div>
+            """, unsafe_allow_html=True)
+
+        # Piotroski F-Score
+        with model_col2:
+            # Calculate simplified Piotroski F-Score (9 criteria)
+            pio_score = 0
+            pio_details = []
+            roa_v = inv_info.get("returnOnAssets", 0) or 0
+            op_cf_v2 = (op_cf or 0)
+            # Profitability (4 signals)
+            if roa_v > 0: pio_score += 1; pio_details.append(("ROA > 0", True))
+            else: pio_details.append(("ROA > 0", False))
+            if op_cf_v2 > 0: pio_score += 1; pio_details.append(("영업현금흐름 > 0" if lang_inv=="ko" else "Op. CF > 0", True))
+            else: pio_details.append(("영업현금흐름 > 0" if lang_inv=="ko" else "Op. CF > 0", False))
+            if earn_growth and earn_growth > 0: pio_score += 1; pio_details.append(("이익 증가" if lang_inv=="ko" else "Earnings↑", True))
+            else: pio_details.append(("이익 증가" if lang_inv=="ko" else "Earnings↑", False))
+            if op_cf_v2 > 0 and roa_v > 0 and op_cf_v2 > net_income: pio_score += 1; pio_details.append(("Accruals 건전" if lang_inv=="ko" else "Accruals OK", True))
+            else: pio_details.append(("Accruals 건전" if lang_inv=="ko" else "Accruals OK", False))
+            # Leverage / Liquidity (3 signals)
+            de_num = inv_info.get("debtToEquity", 100) or 100
+            if de_num < 100: pio_score += 1; pio_details.append(("부채비율 감소" if lang_inv=="ko" else "Leverage↓", True))
+            else: pio_details.append(("부채비율 감소" if lang_inv=="ko" else "Leverage↓", False))
+            cr_v = inv_info.get("currentRatio", 0) or 0
+            if cr_v > 1.5: pio_score += 1; pio_details.append(("유동비율 양호" if lang_inv=="ko" else "Liquidity OK", True))
+            else: pio_details.append(("유동비율 양호" if lang_inv=="ko" else "Liquidity OK", False))
+            pio_details.append(("주식희석 없음" if lang_inv=="ko" else "No dilution", None))  # simplified
+            # Operating Efficiency (2 signals)
+            gm = inv_info.get("grossMargins", 0) or 0
+            if gm > 0.3: pio_score += 1; pio_details.append(("매출총이익률 양호" if lang_inv=="ko" else "Gross Margin OK", True))
+            else: pio_details.append(("매출총이익률 양호" if lang_inv=="ko" else "Gross Margin OK", False))
+            at = inv_info.get("assetTurnover") or (inv_info.get("totalRevenue", 0) / total_assets if total_assets else None)
+            if at and at > 0.5: pio_score += 1; pio_details.append(("자산회전율 양호" if lang_inv=="ko" else "Asset Turnover OK", True))
+            else: pio_details.append(("자산회전율 양호" if lang_inv=="ko" else "Asset Turnover OK", False))
+
+            pio_color = "#00D4AA" if pio_score >= 7 else "#FFA500" if pio_score >= 4 else "#FF4B4B"
+            pio_label = ("강한 매수 신호" if pio_score >= 7 else "중립" if pio_score >= 4 else "약세 신호") if lang_inv=="ko" else ("Strong Buy Signal" if pio_score >= 7 else "Neutral" if pio_score >= 4 else "Weak Signal")
+            details_html = " ".join([
+                f"<span style='color:{'#00D4AA' if ok else '#FF4B4B' if ok is not None else '#8B9DB0'};font-size:0.72rem;'>{'✓' if ok else '✗' if ok is not None else '?'} {d}</span>"
+                for d, ok in pio_details
+            ])
+            st.markdown(f"""
+            <div class='geo-card'>
+                <div style='font-weight:700;color:#AB63FA;font-size:1rem;'>{gl("Piotroski F-Score", "📊 피오트로스키 F-스코어")}</div>
+                <div style='font-size:0.82rem;color:#B0BEC5;margin:6px 0;'>
+                    {"재무 건전성 9개 항목 평가 (0~9점)" if lang_inv=="ko" else "9-point financial health scoring (0–9)"}
+                </div>
+                <div style='font-size:2rem;font-weight:800;color:{pio_color};'>{pio_score} <span style='font-size:1rem;'>/9</span></div>
+                <div style='font-size:0.88rem;color:{pio_color};font-weight:600;'>{pio_label}</div>
+                <div style='margin-top:8px;line-height:1.8;'>{details_html}</div>
+            </div>
+            """, unsafe_allow_html=True)
+
+        # Row 2: Altman Z-Score + Magic Formula
+        az_col, mf_col = st.columns(2)
+
+        with az_col:
+            # Altman Z-Score (simplified for large public companies)
+            shares_out = inv_info.get("sharesOutstanding", 0) or 0
+            try:
+                mkt_cap_z = curr_pr * shares_out if curr_pr and shares_out else (mkt_cap_v or 0)
+                ta = float(inv_info.get("totalAssets", 1) or 1)
+                wc = float((inv_info.get("totalCurrentAssets", 0) or 0) - (inv_info.get("totalCurrentLiabilities", 0) or 0))
+                re = float(inv_info.get("retainedEarnings", 0) or 0)
+                ebit_z = float(inv_info.get("ebit", 0) or 0)
+                td = float(inv_info.get("totalDebt", 0) or 0)
+                rev_z = float(inv_info.get("totalRevenue", 0) or 0)
+                if ta > 0 and td > 0:
+                    X1 = wc / ta
+                    X2 = re / ta
+                    X3 = ebit_z / ta
+                    X4 = mkt_cap_z / td
+                    X5 = rev_z / ta
+                    z_score = 1.2*X1 + 1.4*X2 + 3.3*X3 + 0.6*X4 + 1.0*X5
+                    z_color = "#00D4AA" if z_score > 3 else "#FFA500" if z_score > 1.8 else "#FF4B4B"
+                    z_label = ("안전 구간" if z_score > 3 else "회색 지대" if z_score > 1.8 else "위험 구간") if lang_inv=="ko" else ("Safe Zone" if z_score > 3 else "Grey Zone" if z_score > 1.8 else "Distress Zone")
+                    z_str = f"{z_score:.2f}"
+                else:
+                    z_str, z_color, z_label = "N/A", "#8B9DB0", "데이터 부족" if lang_inv=="ko" else "Insufficient data"
+            except Exception:
+                z_str, z_color, z_label = "N/A", "#8B9DB0", "계산 오류" if lang_inv=="ko" else "Calc error"
+
+            az_col.markdown(f"""
+            <div class='geo-card'>
+                <div style='font-weight:700;color:#FF8C00;font-size:1rem;'>{gl("Altman Z-Score", "⚠️ 알트만 Z-스코어")}</div>
+                <div style='font-size:0.82rem;color:#B0BEC5;margin:6px 0;'>
+                    {"부도 위험 예측 모델 | 3↑ 안전, 1.8~3 회색지대, 1.8↓ 위험" if lang_inv=="ko" else "Bankruptcy prediction model | >3 safe, 1.8-3 grey, <1.8 distress"}
+                </div>
+                <div style='font-size:2rem;font-weight:800;color:{z_color};'>{z_str}</div>
+                <div style='font-size:0.9rem;color:{z_color};font-weight:600;'>{z_label}</div>
+                <div style='font-size:0.78rem;color:#6B7A8D;margin-top:6px;'>
+                    {"공식: 1.2×유동자본/자산 + 1.4×유보이익/자산 + 3.3×EBIT/자산 + 0.6×시총/부채 + 매출/자산" if lang_inv=="ko"
+                     else "Formula: 1.2×WC/TA + 1.4×RE/TA + 3.3×EBIT/TA + 0.6×MktCap/Debt + Rev/TA"}
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
+
+        with mf_col:
+            # Magic Formula (Joel Greenblatt): high ROIC + low EV/EBIT
+            try:
+                ev = inv_info.get("enterpriseValue", 0) or 0
+                ebit_mf = inv_info.get("ebit", 0) or 0
+                ev_ebit = ev / ebit_mf if ebit_mf and ebit_mf > 0 and ev > 0 else None
+                roic_mf = roic_val
+                if ev_ebit and roic_mf:
+                    # Simplified rank: lower ev_ebit + higher roic = better
+                    mf_score_str = f"EV/EBIT: {ev_ebit:.1f}x | ROIC: {roic_mf*100:.1f}%"
+                    mf_good = ev_ebit < 15 and roic_mf > 0.15
+                    mf_ok = ev_ebit < 25 and roic_mf > 0.08
+                    mf_color = "#00D4AA" if mf_good else "#FFA500" if mf_ok else "#FF4B4B"
+                    mf_label = ("매력적" if mf_good else "보통" if mf_ok else "비매력적") if lang_inv=="ko" else ("Attractive" if mf_good else "Neutral" if mf_ok else "Unattractive")
+                else:
+                    mf_score_str = "N/A"
+                    mf_color = "#8B9DB0"
+                    mf_label = "데이터 부족" if lang_inv=="ko" else "Insufficient data"
+            except Exception:
+                mf_score_str = "N/A"
+                mf_color = "#8B9DB0"
+                mf_label = "계산 오류" if lang_inv=="ko" else "Calc error"
+
+            mf_col.markdown(f"""
+            <div class='geo-card'>
+                <div style='font-weight:700;color:#64B5F6;font-size:1rem;'>{gl("Magic Formula", "✨ 매직 포뮬러 (그린블라트)")}</div>
+                <div style='font-size:0.82rem;color:#B0BEC5;margin:6px 0;'>
+                    {"높은 ROIC + 낮은 EV/EBIT = 저평가 고수익 기업 선별" if lang_inv=="ko" else "High ROIC + Low EV/EBIT = undervalued high-quality company"}
+                </div>
+                <div style='font-size:1.3rem;font-weight:700;color:{mf_color};'>{mf_score_str}</div>
+                <div style='font-size:0.9rem;color:{mf_color};font-weight:600;margin-top:4px;'>{mf_label}</div>
+                <div style='font-size:0.78rem;color:#6B7A8D;margin-top:6px;'>
+                    {"EV/EBIT 15↓ + ROIC 15%↑ = 강한 매수 신호" if lang_inv=="ko" else "EV/EBIT < 15 + ROIC > 15% = strong buy signal"}
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
+
+        # ── Section 7: DCF Simplified ──
+        st.markdown("<br>", unsafe_allow_html=True)
+        st.markdown(f"### {gl('DCF', '🔢 DCF 간이 내재가치 분석' if lang_inv=='ko' else '🔢 Simplified DCF Intrinsic Value')}", unsafe_allow_html=True)
+
+        dcf_col1, dcf_col2 = st.columns([2, 1])
+        with dcf_col1:
+            try:
+                fcf_dcf = fcf_val or (op_cf + capex if op_cf else None)
+                if fcf_dcf and fcf_dcf > 0 and shares_out > 0:
+                    # DCF with 3-stage growth
+                    wacc = 0.09  # typical 9% WACC
+                    g1 = min(max(float(rev_growth or 0.05), 0.01), 0.30)  # Stage 1: current growth (capped)
+                    g2 = g1 * 0.5  # Stage 2: half of current growth
+                    g3 = 0.025    # Terminal growth rate
+
+                    pv = 0
+                    cf = fcf_dcf
+                    for yr in range(1, 6):   # Stage 1: 5 years
+                        cf *= (1 + g1)
+                        pv += cf / (1 + wacc)**yr
+                    for yr in range(6, 11):  # Stage 2: 5 years
+                        cf *= (1 + g2)
+                        pv += cf / (1 + wacc)**yr
+                    terminal = cf * (1 + g3) / (wacc - g3)
+                    pv += terminal / (1 + wacc)**10
+
+                    dcf_per_share = pv / shares_out
+                    margin_of_safety = (dcf_per_share - curr_pr) / curr_pr * 100 if curr_pr else 0
+                    dcf_color = "#00D4AA" if margin_of_safety > 20 else "#FFA500" if margin_of_safety > -20 else "#FF4B4B"
+                    dcf_signal = ("매수 유망 (안전마진 확보)" if margin_of_safety > 20 else "적정 가격" if margin_of_safety > -20 else "고평가 주의") if lang_inv=="ko" else ("Attractive (margin of safety)" if margin_of_safety > 20 else "Fairly valued" if margin_of_safety > -20 else "Potentially overvalued")
+
+                    st.markdown(f"""
+                    <div class='prediction-card' style='text-align:left;'>
+                        <div style='display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:16px;'>
+                            <div>
+                                <div style='color:#8B9DB0;font-size:0.85rem;margin-bottom:4px;'>{"DCF 내재가치 (주당)" if lang_inv=="ko" else "DCF Intrinsic Value (per share)"}</div>
+                                <div style='font-size:2rem;font-weight:800;color:{dcf_color};'>${dcf_per_share:,.2f}</div>
+                                <div style='font-size:0.9rem;color:{dcf_color};margin-top:4px;'>{dcf_signal}</div>
+                            </div>
+                            <div>
+                                <div style='color:#8B9DB0;font-size:0.85rem;'>{"현재가" if lang_inv=="ko" else "Current Price"}</div>
+                                <div style='font-size:1.4rem;font-weight:700;color:#FFFFFF;'>${curr_pr:,.2f}</div>
+                                <div style='font-size:0.85rem;color:{dcf_color};'>{margin_of_safety:+.1f}% {"괴리" if lang_inv=="ko" else "deviation"}</div>
+                            </div>
+                            <div>
+                                <div style='color:#8B9DB0;font-size:0.8rem;'>{"가정 (WACC / 성장률1 / 성장률2 / 영구)" if lang_inv=="ko" else "Assumptions (WACC / G1 / G2 / Terminal)"}</div>
+                                <div style='font-size:0.85rem;color:#B0BEC5;'>{wacc*100:.1f}% / {g1*100:.1f}% / {g2*100:.1f}% / {g3*100:.1f}%</div>
+                                <div style='font-size:0.78rem;color:#6B7A8D;margin-top:4px;'>{"※ 단순화된 추정치. 실제 투자 시 전문가 분석 필요" if lang_inv=="ko" else "⚠ Simplified estimate. Consult expert before investing"}</div>
+                            </div>
+                        </div>
+                    </div>
+                    """, unsafe_allow_html=True)
+                else:
+                    st.info("FCF가 0 이하이거나 데이터 부족으로 DCF 계산이 불가합니다." if lang_inv=="ko" else "Cannot compute DCF: FCF ≤ 0 or insufficient data.")
+            except Exception as e:
+                st.info(f"DCF 계산 중 오류: {e}" if lang_inv=="ko" else f"DCF calculation error: {e}")
+
+        with dcf_col2:
+            st.markdown(f"""
+            <div class='summary-box' style='height:100%;'>
+                <div style='font-weight:700;color:#FFA500;margin-bottom:8px;'>{gl("DCF", "DCF 모델이란?")}</div>
+                <div style='font-size:0.82rem;color:#B0BEC5;line-height:1.7;'>
+                    {"• 미래 잉여현금흐름을 현재 가치로 할인<br>• 3단계 성장 모델 적용<br>• 1~5년: 현재 성장률 유지<br>• 6~10년: 절반으로 감속<br>• 10년 이후: 영구성장률 2.5%<br>• WACC 9% 가정 (시장 평균)<br><br><span style='color:#FF8C00;'>⚠ 단순화된 모델로 참고용만 사용" if lang_inv=="ko" else
+                    "• Discounts future free cash flows<br>• 3-stage growth model<br>• Yr 1-5: Current growth rate<br>• Yr 6-10: Half of current growth<br>• Beyond 10: 2.5% terminal growth<br>• WACC assumed at 9%<br><br><span style='color:#FF8C00;'>⚠ Simplified model — reference only"}</span>
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
+
+        # ── Section 8: Multi-Model Fair Value Analysis ──
+        st.markdown("<br>", unsafe_allow_html=True)
+        st.markdown(f"### {'🎯 적정 주가 종합 분석 (멀티 밸류에이션)' if lang_inv=='ko' else '🎯 Fair Value Analysis — Multi-Model'}", unsafe_allow_html=True)
+        st.markdown(f"<small style='color:#8B9DB0;'>{'6가지 밸류에이션 모델로 적정가를 산출하고 현재가와 괴리를 분석합니다' if lang_inv=='ko' else '6 valuation models to estimate fair value and explain the gap from current price'}</small>", unsafe_allow_html=True)
+        st.markdown("<br>", unsafe_allow_html=True)
+
+        _curr = curr_pr or 0
+        fv_methods = []  # list of (method_name, fair_value, weight, color, description)
+
+        # 1) PER-based: industry-avg P/E × trailing EPS
+        _eps_t = inv_info.get("trailingEps") or 0
+        _per_fwd = inv_info.get("forwardPE")
+        _per_trail = inv_info.get("trailingPE")
+        # Use sector median P/E heuristic (technology ≈ 25, broad market ≈ 18)
+        _sector_pe = 25.0 if "tech" in (inv_info.get("sector","") or "").lower() else 20.0
+        _fv_per = _sector_pe * _eps_t if _eps_t and _eps_t > 0 else None
+
+        # 2) PBR-based: sector-avg P/B × book value per share
+        _bps = inv_info.get("bookValue") or 0
+        _sector_pb = 4.0 if "tech" in (inv_info.get("sector","") or "").lower() else 2.5
+        _fv_pbr = _sector_pb * _bps if _bps and _bps > 0 else None
+
+        # 3) P/S-based: sector-avg P/S × revenue per share
+        _rev = inv_info.get("totalRevenue") or 0
+        _shares = inv_info.get("sharesOutstanding") or 1
+        _rev_ps = _rev / _shares if _shares else 0
+        _sector_ps = 8.0 if "tech" in (inv_info.get("sector","") or "").lower() else 2.0
+        _fv_ps = _sector_ps * _rev_ps if _rev_ps else None
+
+        # 4) EV/EBITDA-based
+        _ebitda = inv_info.get("ebitda") or 0
+        _td2 = inv_info.get("totalDebt") or 0
+        _cash = inv_info.get("totalCash") or 0
+        _sector_ev_ebitda = 20.0 if "tech" in (inv_info.get("sector","") or "").lower() else 12.0
+        if _ebitda and _ebitda > 0 and _shares:
+            _ev_fair = _sector_ev_ebitda * _ebitda
+            _eq_fair = _ev_fair - _td2 + _cash
+            _fv_evebitda = _eq_fair / _shares if _eq_fair > 0 else None
+        else:
+            _fv_evebitda = None
+
+        # 5) Graham Number
+        _fv_graham = graham  # already computed above (may be None)
+
+        # 6) DCF
+        try:
+            _fv_dcf = dcf_per_share if 'dcf_per_share' in dir() else None
+        except Exception:
+            _fv_dcf = None
+
+        # 7) Analyst consensus
+        _fv_analyst = inv_info.get("targetMeanPrice") or None
+        _fv_analyst_low  = inv_info.get("targetLowPrice") or None
+        _fv_analyst_high = inv_info.get("targetHighPrice") or None
+
+        # Build table
+        _methods_raw = [
+            ("PER 기반" if lang_inv=="ko" else "P/E Based",       _fv_per,      1.5, "#FFA500",
+             f"섹터 평균 PER {_sector_pe:.0f}배 × EPS({_eps_t:.2f})" if lang_inv=="ko"
+             else f"Sector avg P/E {_sector_pe:.0f}x × EPS({_eps_t:.2f})"),
+            ("PBR 기반" if lang_inv=="ko" else "P/B Based",       _fv_pbr,      1.0, "#64B5F6",
+             f"섹터 평균 PBR {_sector_pb:.1f}배 × BPS({_bps:.2f})" if lang_inv=="ko"
+             else f"Sector avg P/B {_sector_pb:.1f}x × BPS({_bps:.2f})"),
+            ("P/S 기반" if lang_inv=="ko" else "P/S Based",       _fv_ps,       0.8, "#AB63FA",
+             f"섹터 평균 P/S {_sector_ps:.1f}배 × 주당매출({_rev_ps:.2f})" if lang_inv=="ko"
+             else f"Sector avg P/S {_sector_ps:.1f}x × RevPS({_rev_ps:.2f})"),
+            ("EV/EBITDA 기반" if lang_inv=="ko" else "EV/EBITDA",  _fv_evebitda, 1.2, "#FF8C00",
+             f"섹터 평균 EV/EBITDA {_sector_ev_ebitda:.0f}배 적용" if lang_inv=="ko"
+             else f"Sector avg EV/EBITDA {_sector_ev_ebitda:.0f}x applied"),
+            ("그레이엄 넘버" if lang_inv=="ko" else "Graham Number", _fv_graham,  1.0, "#FFD700",
+             "√(22.5 × EPS × BPS) — 안전마진 기준"),
+            ("DCF 내재가치" if lang_inv=="ko" else "DCF Value",    _fv_dcf,      2.0, "#00D4AA",
+             "3단계 성장 DCF 모델 (WACC 9%)" if lang_inv=="ko" else "3-stage DCF model (WACC 9%)"),
+            ("애널리스트 목표가" if lang_inv=="ko" else "Analyst Target", _fv_analyst, 1.5, "#E91E8C",
+             f"기관 애널리스트 평균 목표가 (범위: ${_fv_analyst_low or '?'}~${_fv_analyst_high or '?'})" if lang_inv=="ko"
+             else f"Consensus analyst target (range: ${_fv_analyst_low or '?'}~${_fv_analyst_high or '?'})"),
+        ]
+        _valid = [(n, v, w, c, d) for n, v, w, c, d in _methods_raw if v and v > 0]
+
+        if _valid and _curr > 0:
+            # Weighted average fair value
+            _total_w = sum(w for _, _, w, _, _ in _valid)
+            _wavg_fv = sum(v * w for _, v, w, _, _ in _valid) / _total_w
+            _simple_avg = sum(v for _, v, _, _, _ in _valid) / len(_valid)
+            _gap_pct = (_wavg_fv - _curr) / _curr * 100
+            _gap_color = "#FF4040" if _gap_pct > 10 else "#4488FF" if _gap_pct < -10 else "#FFA500"
+            _gap_label = (
+                ("🟢 저평가 — 매수 고려 구간" if _gap_pct > 20
+                 else "🟡 약간 저평가" if _gap_pct > 10
+                 else "🟡 적정 가격 근접" if _gap_pct > -10
+                 else "🟠 약간 고평가" if _gap_pct > -20
+                 else "🔴 고평가 — 주의 구간")
+                if lang_inv == "ko" else
+                ("🟢 Undervalued — Consider buying" if _gap_pct > 20
+                 else "🟡 Slightly undervalued" if _gap_pct > 10
+                 else "🟡 Near fair value" if _gap_pct > -10
+                 else "🟠 Slightly overvalued" if _gap_pct > -20
+                 else "🔴 Overvalued — Caution")
+            )
+
+            # ── Summary banner ──
+            _min_fv = min(v for _, v, _, _, _ in _valid)
+            _max_fv = max(v for _, v, _, _, _ in _valid)
+            st.markdown(f"""
+            <div style='background:linear-gradient(135deg,#1A1F35,#0F1527);border:2px solid {_gap_color};
+                        border-radius:14px;padding:20px 28px;margin-bottom:20px;'>
+                <div style='display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:16px;'>
+                    <div>
+                        <div style='font-size:0.82rem;color:#8B9DB0;margin-bottom:4px;'>
+                            {"가중평균 적정주가 (" + str(len(_valid)) + "개 모델)" if lang_inv=="ko"
+                             else "Weighted Avg Fair Value (" + str(len(_valid)) + " models)"}
+                        </div>
+                        <div style='font-size:2.4rem;font-weight:900;color:{_gap_color};'>${_wavg_fv:,.2f}</div>
+                        <div style='font-size:1rem;color:{_gap_color};font-weight:700;margin-top:4px;'>{_gap_label}</div>
+                    </div>
+                    <div>
+                        <div style='font-size:0.82rem;color:#8B9DB0;'>{"현재가" if lang_inv=="ko" else "Current Price"}</div>
+                        <div style='font-size:1.8rem;font-weight:800;color:#FFFFFF;'>${_curr:,.2f}</div>
+                        <div style='font-size:1.1rem;font-weight:700;color:{_gap_color};margin-top:4px;'>{_gap_pct:+.1f}% {"괴리율" if lang_inv=="ko" else "gap"}</div>
+                    </div>
+                    <div>
+                        <div style='font-size:0.82rem;color:#8B9DB0;'>{"적정가 범위" if lang_inv=="ko" else "Fair Value Range"}</div>
+                        <div style='font-size:1rem;color:#B0BEC5;margin-top:4px;'>${_min_fv:,.2f} ~ ${_max_fv:,.2f}</div>
+                        <div style='font-size:0.82rem;color:#8B9DB0;margin-top:4px;'>{"단순 평균" if lang_inv=="ko" else "Simple avg"}: ${_simple_avg:,.2f}</div>
+                    </div>
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
+
+            # ── Method-by-method table + bar chart ──
+            fv_chart_col, fv_table_col = st.columns([3, 2])
+
+            with fv_chart_col:
+                fig_fv = go.Figure()
+                names_fv = [n for n, _, _, _, _ in _valid]
+                vals_fv  = [v for _, v, _, _, _ in _valid]
+                colors_fv = [c for _, _, _, c, _ in _valid]
+                gaps_fv   = [(v - _curr) / _curr * 100 for v in vals_fv]
+
+                fig_fv.add_trace(go.Bar(
+                    x=names_fv, y=vals_fv,
+                    marker_color=colors_fv,
+                    text=[f"${v:,.0f}<br>{g:+.1f}%" for v, g in zip(vals_fv, gaps_fv)],
+                    textposition="outside",
+                    hovertemplate="<b>%{x}</b><br>적정가: $%{y:,.2f}<br>괴리: %{text}<extra></extra>",
+                ))
+                # Current price line
+                fig_fv.add_hline(
+                    y=_curr, line_dash="dash", line_color="#FFFFFF", line_width=2,
+                    annotation_text=f"  현재가 ${_curr:,.2f}" if lang_inv=="ko" else f"  Current ${_curr:,.2f}",
+                    annotation_font_color="#FFFFFF",
+                )
+                # Weighted avg line
+                fig_fv.add_hline(
+                    y=_wavg_fv, line_dash="dot", line_color=_gap_color, line_width=2,
+                    annotation_text=f"  적정가 ${_wavg_fv:,.2f}" if lang_inv=="ko" else f"  Fair Value ${_wavg_fv:,.2f}",
+                    annotation_font_color=_gap_color,
+                )
+                fig_fv.update_layout(
+                    template="plotly_dark",
+                    height=380,
+                    title=f"{'모델별 적정가 vs 현재가' if lang_inv=='ko' else 'Fair Value by Model vs Current Price'}",
+                    margin=dict(l=0, r=0, t=50, b=0),
+                    plot_bgcolor="#0E1117", paper_bgcolor="#0E1117",
+                    yaxis_title="Price (USD)" if lang_inv=="en" else "주가 (USD)",
+                    showlegend=False,
+                )
+                st.plotly_chart(fig_fv, use_container_width=True)
+
+            with fv_table_col:
+                st.markdown(f"<div style='font-weight:700;color:#FFA500;margin-bottom:10px;'>{'모델별 상세' if lang_inv=='ko' else 'Model Detail'}</div>", unsafe_allow_html=True)
+                for n, v, w, c, desc in _valid:
+                    _g = (v - _curr) / _curr * 100
+                    _g_c = "#FF4040" if _g > 0 else "#4488FF"
+                    st.markdown(f"""
+                    <div style='background:#1A1F35;border-left:3px solid {c};border-radius:0 8px 8px 0;
+                                padding:10px 14px;margin-bottom:8px;'>
+                        <div style='display:flex;justify-content:space-between;align-items:center;'>
+                            <span style='font-weight:700;color:{c};font-size:0.85rem;'>{n}</span>
+                            <span style='font-size:1rem;font-weight:800;color:#FFFFFF;'>${v:,.2f}</span>
+                        </div>
+                        <div style='display:flex;justify-content:space-between;margin-top:4px;'>
+                            <span style='color:#8B9DB0;font-size:0.72rem;'>{desc[:40]}{"..." if len(desc)>40 else ""}</span>
+                            <span style='color:{_g_c};font-size:0.82rem;font-weight:700;'>{_g:+.1f}%</span>
+                        </div>
+                    </div>
+                    """, unsafe_allow_html=True)
+
+            # ── Gap analysis explanation ──
+            st.markdown("<br>", unsafe_allow_html=True)
+            st.markdown(f"<div class='section-header'>{'🔍 괴리율 원인 분석' if lang_inv=='ko' else '🔍 Gap Analysis'}</div>", unsafe_allow_html=True)
+
+            def _gap_explanation(gap_pct, inv_info, lang_inv, per, pbr, roe, rev_growth, fcf_val):
+                reasons = []
+                if gap_pct > 20:
+                    reasons.append("📉 " + ("현재 주가가 여러 밸류에이션 모델 대비 크게 저평가되어 있습니다. 시장이 단기 악재를 과도하게 반영했거나, 아직 성장 잠재력이 충분히 인정받지 못했을 가능성이 있습니다." if lang_inv=="ko" else "The stock appears significantly undervalued vs. multiple models. The market may be over-pricing short-term risks or the growth potential may not yet be fully recognized."))
+                elif gap_pct > 5:
+                    reasons.append("📊 " + ("현재가가 적정가보다 다소 낮습니다. 단기 모멘텀 부재나 섹터 전반의 약세가 원인일 수 있습니다." if lang_inv=="ko" else "Price is slightly below fair value. Short-term momentum weakness or sector-wide selling pressure may be the cause."))
+                elif gap_pct > -5:
+                    reasons.append("⚖️ " + ("현재 주가가 여러 모델의 적정가와 거의 일치합니다. 시장이 적절히 가격을 반영한 상태입니다." if lang_inv=="ko" else "Current price is well-aligned with multi-model fair values. The market appears to be pricing the stock fairly."))
+                elif gap_pct > -20:
+                    reasons.append("📈 " + ("현재가가 적정가보다 높습니다. 성장 프리미엄·브랜드 가치 등이 반영됐거나 시장 과열 신호일 수 있습니다." if lang_inv=="ko" else "Price is above fair value. Growth premium, brand value, or market exuberance may be reflected."))
+                else:
+                    reasons.append("🚨 " + ("현재 주가가 대부분의 밸류에이션 모델 대비 크게 고평가되어 있습니다. 투자 시 주의가 필요합니다." if lang_inv=="ko" else "The stock appears significantly overvalued vs. most models. Caution is advised."))
+
+                # Specific factor analysis
+                if per and float(per) > 40:
+                    reasons.append("🔺 " + (f"PER {float(per):.1f}배로 업종 평균 대비 높아 성장 기대감이 주가에 선반영된 상태입니다." if lang_inv=="ko"
+                                   else f"P/E of {float(per):.1f}x is above sector avg — high growth expectations are priced in."))
+                if pbr and float(pbr) > 5:
+                    reasons.append("🔺 " + (f"PBR {float(pbr):.1f}배로 강력한 무형자산(브랜드·기술·특허) 가치가 반영된 것으로 해석됩니다." if lang_inv=="ko"
+                                   else f"P/B of {float(pbr):.1f}x suggests strong intangible assets (brand/tech/IP) are priced in."))
+                if roe and float(roe) * 100 > 20:
+                    reasons.append("✅ " + (f"ROE {float(roe)*100:.1f}%의 높은 수익성이 프리미엄 밸류에이션을 정당화합니다." if lang_inv=="ko"
+                                   else f"ROE of {float(roe)*100:.1f}% justifies premium valuation."))
+                if rev_growth and float(rev_growth) * 100 > 20:
+                    reasons.append("✅ " + (f"매출 성장률 {float(rev_growth)*100:.1f}%의 고성장이 현재 주가를 지지합니다." if lang_inv=="ko"
+                                   else f"{float(rev_growth)*100:.1f}% revenue growth supports the current price level."))
+                if fcf_val and fcf_val < 0:
+                    reasons.append("⚠️ " + ("FCF가 마이너스로 성장 투자 단계의 기업입니다. 미래 수익성에 대한 신뢰가 가격 결정의 핵심입니다." if lang_inv=="ko"
+                                   else "Negative FCF indicates a growth-stage company. Future profitability expectations drive the price."))
+
+                analyst_tgt = inv_info.get("targetMeanPrice")
+                n_analysts  = inv_info.get("numberOfAnalystOpinions") or 0
+                if analyst_tgt and n_analysts:
+                    reasons.append("📋 " + (f"총 {n_analysts}명의 애널리스트 평균 목표가는 ${analyst_tgt:,.2f}입니다." if lang_inv=="ko"
+                                   else f"{n_analysts} analysts have an average target of ${analyst_tgt:,.2f}."))
+                return reasons
+
+            _reasons = _gap_explanation(_gap_pct, inv_info, lang_inv, per, pbr, roe, rev_growth, fcf_val)
+            for r in _reasons:
+                st.markdown(f"""
+                <div style='background:#1A1F35;border-left:3px solid {_gap_color};border-radius:0 8px 8px 0;
+                            padding:10px 16px;margin-bottom:8px;font-size:0.88rem;color:#E0E0E0;line-height:1.6;'>
+                    {r}
+                </div>
+                """, unsafe_allow_html=True)
+
+            st.markdown(f"""
+            <div style='background:#0D1120;border:1px solid #2E3250;border-radius:10px;padding:12px 16px;margin-top:8px;'>
+                <div style='font-size:0.78rem;color:#6B7A8D;'>
+                    {"※ 적정가는 모델·가정에 따라 크게 달라집니다. 섹터 평균 배수는 시장 상황에 따라 변동되며, 본 분석은 참고용입니다." if lang_inv=="ko"
+                     else "⚠ Fair values vary significantly by model and assumptions. Sector multiples shift with market conditions. For reference only."}
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
+
+        else:
+            st.info("현재가 또는 재무 데이터 부족으로 적정가 분석이 어렵습니다." if lang_inv=="ko"
+                    else "Insufficient financial data to perform fair value analysis.")
+
+        # ── Section 9: AI One-line Summary ──
+        st.markdown("<br>", unsafe_allow_html=True)
+        st.markdown(f"### {'🤖 AI 종합 투자 분석 요약' if lang_inv=='ko' else '🤖 AI Investment Summary'}", unsafe_allow_html=True)
+
+        # Generate rule-based AI summary
+        def generate_invest_summary(inv_info, lang_inv, per, pbr, roe, op_margin, rev_growth, fcf_val, pio_score, z_str):
+            signals = []
+            concerns = []
+            # Valuation
+            if per and float(per) < 15: signals.append("저PER 저평가" if lang_inv=="ko" else "low P/E undervaluation")
+            elif per and float(per) > 35: concerns.append("고PER 고평가 우려" if lang_inv=="ko" else "high P/E overvaluation risk")
+            if pbr and float(pbr) < 1: signals.append("PBR 1배 미만 자산 저평가" if lang_inv=="ko" else "trading below book value")
+            # Profitability
+            if roe and float(roe)*100 > 15: signals.append(f"ROE {float(roe)*100:.0f}% 우수 수익성" if lang_inv=="ko" else f"excellent ROE {float(roe)*100:.0f}%")
+            if op_margin and float(op_margin)*100 > 20: signals.append("높은 영업이익률로 경쟁우위 확보" if lang_inv=="ko" else "high operating margin competitive moat")
+            # Growth
+            if rev_growth and float(rev_growth)*100 > 15: signals.append(f"매출 {float(rev_growth)*100:.0f}% 고성장" if lang_inv=="ko" else f"{float(rev_growth)*100:.0f}% revenue growth")
+            elif rev_growth and float(rev_growth)*100 < 0: concerns.append("매출 역성장" if lang_inv=="ko" else "revenue decline")
+            # Cash flow
+            if fcf_val and fcf_val > 0: signals.append("양호한 잉여현금흐름" if lang_inv=="ko" else "positive free cash flow")
+            else: concerns.append("FCF 마이너스" if lang_inv=="ko" else "negative FCF")
+            # Piotroski
+            if pio_score >= 7: signals.append(f"F-스코어 {pio_score}/9 재무 건전" if lang_inv=="ko" else f"F-Score {pio_score}/9 financially strong")
+            elif pio_score <= 2: concerns.append(f"F-스코어 {pio_score}/9 재무 부실" if lang_inv=="ko" else f"F-Score {pio_score}/9 financially weak")
+            # Z-Score
+            try:
+                z_v = float(z_str)
+                if z_v > 3: signals.append("부도 위험 낮음" if lang_inv=="ko" else "low bankruptcy risk")
+                elif z_v < 1.8: concerns.append("부도 위험 경고" if lang_inv=="ko" else "bankruptcy risk warning")
+            except Exception:
+                pass
+
+            if not signals and not concerns:
+                return ("데이터 부족으로 자동 분석이 어렵습니다. 직접 재무제표를 확인하세요." if lang_inv=="ko"
+                        else "Insufficient data for automated analysis. Please review financial statements directly.")
+
+            summary_parts = []
+            if signals:
+                summary_parts.append(("✅ 긍정 신호: " if lang_inv=="ko" else "✅ Positives: ") + " · ".join(signals[:3]))
+            if concerns:
+                summary_parts.append(("⚠️ 주의 사항: " if lang_inv=="ko" else "⚠️ Concerns: ") + " · ".join(concerns[:3]))
+            return " | ".join(summary_parts)
+
+        ai_summary = generate_invest_summary(inv_info, lang_inv, per, pbr, roe, op_margin, rev_growth, fcf_val, pio_score, z_str)
+        st.markdown(f"""
+        <div class='summary-box' style='border-color:#FFA500;'>
+            <div style='font-size:0.78rem;color:#8B9DB0;margin-bottom:6px;'>🤖 {"규칙 기반 자동 분석" if lang_inv=="ko" else "Rule-based Auto Analysis"} · {company_name} ({ticker})</div>
+            <div style='font-size:0.92rem;color:#EAEAEA;line-height:1.8;'>{ai_summary}</div>
         </div>
         """, unsafe_allow_html=True)
 
-    else:
-        st.info("현재가 또는 재무 데이터 부족으로 적정가 분석이 어렵습니다." if lang_inv=="ko"
-                else "Insufficient financial data to perform fair value analysis.")
+        # Disclaimer
+        st.markdown(f"<small style='color:#4A5568;'>{'⚠️ 모든 지표는 참고용입니다. yFinance 실시간 데이터 기반. 투자는 본인 책임입니다.' if lang_inv=='ko' else '⚠️ All metrics for reference only. Based on yFinance real-time data. Invest at your own risk.'}</small>", unsafe_allow_html=True)
 
-    # ── Section 9: AI One-line Summary ──
-    st.markdown("<br>", unsafe_allow_html=True)
-    st.markdown(f"### {'🤖 AI 종합 투자 분석 요약' if lang_inv=='ko' else '🤖 AI Investment Summary'}", unsafe_allow_html=True)
-
-    # Generate rule-based AI summary
-    def generate_invest_summary(inv_info, lang_inv, per, pbr, roe, op_margin, rev_growth, fcf_val, pio_score, z_str):
-        signals = []
-        concerns = []
-        # Valuation
-        if per and float(per) < 15: signals.append("저PER 저평가" if lang_inv=="ko" else "low P/E undervaluation")
-        elif per and float(per) > 35: concerns.append("고PER 고평가 우려" if lang_inv=="ko" else "high P/E overvaluation risk")
-        if pbr and float(pbr) < 1: signals.append("PBR 1배 미만 자산 저평가" if lang_inv=="ko" else "trading below book value")
-        # Profitability
-        if roe and float(roe)*100 > 15: signals.append(f"ROE {float(roe)*100:.0f}% 우수 수익성" if lang_inv=="ko" else f"excellent ROE {float(roe)*100:.0f}%")
-        if op_margin and float(op_margin)*100 > 20: signals.append("높은 영업이익률로 경쟁우위 확보" if lang_inv=="ko" else "high operating margin competitive moat")
-        # Growth
-        if rev_growth and float(rev_growth)*100 > 15: signals.append(f"매출 {float(rev_growth)*100:.0f}% 고성장" if lang_inv=="ko" else f"{float(rev_growth)*100:.0f}% revenue growth")
-        elif rev_growth and float(rev_growth)*100 < 0: concerns.append("매출 역성장" if lang_inv=="ko" else "revenue decline")
-        # Cash flow
-        if fcf_val and fcf_val > 0: signals.append("양호한 잉여현금흐름" if lang_inv=="ko" else "positive free cash flow")
-        else: concerns.append("FCF 마이너스" if lang_inv=="ko" else "negative FCF")
-        # Piotroski
-        if pio_score >= 7: signals.append(f"F-스코어 {pio_score}/9 재무 건전" if lang_inv=="ko" else f"F-Score {pio_score}/9 financially strong")
-        elif pio_score <= 2: concerns.append(f"F-스코어 {pio_score}/9 재무 부실" if lang_inv=="ko" else f"F-Score {pio_score}/9 financially weak")
-        # Z-Score
-        try:
-            z_v = float(z_str)
-            if z_v > 3: signals.append("부도 위험 낮음" if lang_inv=="ko" else "low bankruptcy risk")
-            elif z_v < 1.8: concerns.append("부도 위험 경고" if lang_inv=="ko" else "bankruptcy risk warning")
-        except Exception:
-            pass
-
-        if not signals and not concerns:
-            return ("데이터 부족으로 자동 분석이 어렵습니다. 직접 재무제표를 확인하세요." if lang_inv=="ko"
-                    else "Insufficient data for automated analysis. Please review financial statements directly.")
-
-        summary_parts = []
-        if signals:
-            summary_parts.append(("✅ 긍정 신호: " if lang_inv=="ko" else "✅ Positives: ") + " · ".join(signals[:3]))
-        if concerns:
-            summary_parts.append(("⚠️ 주의 사항: " if lang_inv=="ko" else "⚠️ Concerns: ") + " · ".join(concerns[:3]))
-        return " | ".join(summary_parts)
-
-    ai_summary = generate_invest_summary(inv_info, lang_inv, per, pbr, roe, op_margin, rev_growth, fcf_val, pio_score, z_str)
+    # ─── FOOTER ───────────────────────────────────────────────────────────────────
+    st.markdown("<br><br>", unsafe_allow_html=True)
+    st.markdown("<br><br>", unsafe_allow_html=True)
     st.markdown(f"""
-    <div class='summary-box' style='border-color:#FFA500;'>
-        <div style='font-size:0.78rem;color:#8B9DB0;margin-bottom:6px;'>🤖 {"규칙 기반 자동 분석" if lang_inv=="ko" else "Rule-based Auto Analysis"} · {company_name} ({ticker})</div>
-        <div style='font-size:0.92rem;color:#EAEAEA;line-height:1.8;'>{ai_summary}</div>
+    <div style='text-align:center;color:#4A5568;font-size:0.8rem;padding:16px;border-top:1px solid #2E3250;'>
+        {'⚠️ 이 프로그램은 교육 및 분석 목적으로만 제공됩니다. 투자 결정은 전문 금융 어드바이저와 상담하세요.' if lang == 'ko'
+         else '⚠️ This system is for educational and analytical purposes only. Consult a qualified financial advisor before making investment decisions.'}<br>
+        Data: Yahoo Finance | News: Reuters, CNBC, MarketWatch | Updated: {datetime.now().strftime('%Y-%m-%d %H:%M')} UTC
     </div>
     """, unsafe_allow_html=True)
-
-    # Disclaimer
-    st.markdown(f"<small style='color:#4A5568;'>{'⚠️ 모든 지표는 참고용입니다. yFinance 실시간 데이터 기반. 투자는 본인 책임입니다.' if lang_inv=='ko' else '⚠️ All metrics for reference only. Based on yFinance real-time data. Invest at your own risk.'}</small>", unsafe_allow_html=True)
-
-# ─── FOOTER ───────────────────────────────────────────────────────────────────
-st.markdown("<br><br>", unsafe_allow_html=True)
-st.markdown("<br><br>", unsafe_allow_html=True)
-st.markdown(f"""
-<div style='text-align:center;color:#4A5568;font-size:0.8rem;padding:16px;border-top:1px solid #2E3250;'>
-    {'⚠️ 이 프로그램은 교육 및 분석 목적으로만 제공됩니다. 투자 결정은 전문 금융 어드바이저와 상담하세요.' if lang == 'ko'
-     else '⚠️ This system is for educational and analytical purposes only. Consult a qualified financial advisor before making investment decisions.'}<br>
-    Data: Yahoo Finance | News: Reuters, CNBC, MarketWatch | Updated: {datetime.now().strftime('%Y-%m-%d %H:%M')} UTC
-</div>
-""", unsafe_allow_html=True)
