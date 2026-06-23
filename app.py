@@ -217,6 +217,8 @@ if "news_translated" not in st.session_state:
     st.session_state.news_translated = False
 if "geo_translated" not in st.session_state:
     st.session_state.geo_translated = False
+if "sidebar_view" not in st.session_state:
+    st.session_state.sidebar_view = None  # None = normal tabs, "semi" or "sectors"
 
 def T(key):
     return TEXTS[st.session_state.lang].get(key, key)
@@ -1347,6 +1349,27 @@ with st.sidebar:
 
     st.divider()
 
+    # Quick-access: Semiconductor & Sector Explorer
+    semi_label = "💾 반도체 생태계" if st.session_state.lang == "ko" else "💾 Semiconductor Ecosystem"
+    sect_label = "🗂️ 섹터 탐색기" if st.session_state.lang == "ko" else "🗂️ Sector Explorer"
+    sb_col1, sb_col2 = st.columns(2)
+    with sb_col1:
+        semi_active = st.session_state.sidebar_view == "semi"
+        if st.button(semi_label, use_container_width=True,
+                     type="primary" if semi_active else "secondary",
+                     key="sb_semi"):
+            st.session_state.sidebar_view = None if semi_active else "semi"
+            st.rerun()
+    with sb_col2:
+        sect_active = st.session_state.sidebar_view == "sectors"
+        if st.button(sect_label, use_container_width=True,
+                     type="primary" if sect_active else "secondary",
+                     key="sb_sectors"):
+            st.session_state.sidebar_view = None if sect_active else "sectors"
+            st.rerun()
+
+    st.divider()
+
     # S&P 500 by sector
     st.markdown(f"**{T('sp500_list')}**")
     for sector, stocks in SP500_POPULAR.items():
@@ -1447,8 +1470,13 @@ for col, (label, val, change) in zip([mcol1, mcol2, mcol3, mcol4, mcol5, mcol6],
     </div>
     """, unsafe_allow_html=True)
 
-# ─── TABS ─────────────────────────────────────────────────────────────────────
-tabs = st.tabs([T("tab_overview"), T("tab_predict"), T("tab_news"), T("tab_geo"), T("tab_history"), T("tab_company"), T("tab_relations"), T("tab_semi"), T("tab_sectors"), T("tab_invest")])
+# ─── TABS (only shown when no sidebar panel is active) ────────────────────────
+from contextlib import nullcontext as _nctx
+_show_tabs = st.session_state.sidebar_view is None
+if _show_tabs:
+    tabs = st.tabs([T("tab_overview"), T("tab_predict"), T("tab_news"), T("tab_geo"), T("tab_history"), T("tab_company"), T("tab_relations"), T("tab_invest")])
+else:
+    tabs = [_nctx()] * 8  # dummy context managers so "with tabs[N]:" doesn't error
 
 # ══════════════════ TAB 1: OVERVIEW ══════════════════
 with tabs[0]:
@@ -2653,7 +2681,7 @@ def get_semi_prices(tickers: list) -> dict:
             result[t] = {"price": 0, "chg": 0, "mktcap": 0}
     return result
 
-with tabs[7]:
+if st.session_state.sidebar_view == "semi":
     lang_s = lang
     st.markdown(f"""
     <div style='background:linear-gradient(135deg,#0D1B2A,#1A2744);border-radius:14px;
@@ -3398,8 +3426,8 @@ def get_batch_prices(tickers: tuple) -> dict:
             result[t] = {"price": 0, "chg": 0}
     return result
 
-# ══════════════════ TAB 9: SECTOR EXPLORER ══════════════════
-with tabs[8]:
+# ══════════════════ SECTOR EXPLORER (sidebar nav) ══════════════════
+if st.session_state.sidebar_view == "sectors":
     lang_se = lang
 
     st.markdown(f"""
@@ -3566,8 +3594,8 @@ with tabs[8]:
         </div>
         """, unsafe_allow_html=True)
 
-# ══════════════════ TAB 10: INVESTMENT ANALYSIS ══════════════════
-with tabs[9]:
+# ══════════════════ TAB 8: INVESTMENT ANALYSIS ══════════════════
+with tabs[7]:
     lang_inv = st.session_state.lang
     st.markdown(f"<div class='section-header'>{'📈 투자 분석 대시보드' if lang_inv=='ko' else '📈 Investment Analysis Dashboard'}</div>", unsafe_allow_html=True)
     st.markdown(f"<small style='color:#8B9DB0;'>{'실시간 yFinance 데이터 기반 | 투자 결정은 전문가와 상담하세요' if lang_inv=='ko' else 'Real-time yFinance data | Consult a professional before investing'}</small>", unsafe_allow_html=True)
