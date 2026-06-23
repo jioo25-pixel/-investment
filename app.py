@@ -8,6 +8,7 @@ import yfinance as yf
 import pandas as pd
 import numpy as np
 import plotly.graph_objects as go
+import sys, os
 from plotly.subplots import make_subplots
 import requests
 from xml.etree import ElementTree as ET
