@@ -215,6 +215,241 @@ if "last_news_update" not in st.session_state:
 def T(key):
     return TEXTS[st.session_state.lang].get(key, key)
 
+# ─── SEARCH MAPPING (Korean / English / Ticker aliases) ───────────────────────
+SEARCH_MAP = {
+    # Indices
+    "s&p500":"^GSPC","s&p 500":"^GSPC","sp500":"^GSPC","에스앤피500":"^GSPC",
+    "s&p":"^GSPC","snp":"^GSPC","snp500":"^GSPC",
+    "다우":"^DJI","dow":"^DJI","dow jones":"^DJI","다우존스":"^DJI",
+    "나스닥":"^IXIC","nasdaq":"^IXIC",
+    "러셀":"^RUT","russell":"^RUT","russell2000":"^RUT",
+    "vix":"^VIX","공포지수":"^VIX","변동성지수":"^VIX",
+    # US Big Tech
+    "애플":"AAPL","apple":"AAPL",
+    "마이크로소프트":"MSFT","microsoft":"MSFT",
+    "구글":"GOOGL","google":"GOOGL","알파벳":"GOOGL","alphabet":"GOOGL",
+    "메타":"META","meta":"META","페이스북":"META","facebook":"META",
+    "아마존":"AMZN","amazon":"AMZN",
+    "넷플릭스":"NFLX","netflix":"NFLX",
+    "테슬라":"TSLA","tesla":"TSLA",
+    "엔비디아":"NVDA","nvidia":"NVDA","엔비":"NVDA",
+    "어도비":"ADBE","adobe":"ADBE",
+    "세일즈포스":"CRM","salesforce":"CRM",
+    "오라클":"ORCL","oracle":"ORCL",
+    "인텔":"INTC","intel":"INTC",
+    "amd":"AMD","에이엠디":"AMD",
+    "퀄컴":"QCOM","qualcomm":"QCOM",
+    "브로드컴":"AVGO","broadcom":"AVGO",
+    "arm":"ARM","암홀딩스":"ARM","arm홀딩스":"ARM",
+    "팔란티어":"PLTR","palantir":"PLTR",
+    "스노우플레이크":"SNOW","snowflake":"SNOW",
+    "데이터독":"DDOG","datadog":"DDOG",
+    "서비스나우":"NOW","servicenow":"NOW",
+    "우버":"UBER","uber":"UBER",
+    "에어비앤비":"ABNB","airbnb":"ABNB",
+    "도어대시":"DASH","doordash":"DASH",
+    "스냅":"SNAP","snap":"SNAP","스냅챗":"SNAP","snapchat":"SNAP",
+    "핀터레스트":"PINS","pinterest":"PINS",
+    "트위터":"X","twitter":"X",
+    "줌":"ZM","zoom":"ZM",
+    "쇼피파이":"SHOP","shopify":"SHOP",
+    "스포티파이":"SPOT","spotify":"SPOT",
+    "트윌리오":"TWLO","twilio":"TWLO",
+    "ui패스":"PATH","uipath":"PATH",
+    "몽고디비":"MDB","mongodb":"MDB",
+    "컨플루언트":"CFLT","confluent":"CFLT",
+    "센티넬원":"S","sentinelone":"S",
+    # Semiconductors
+    "tsmc":"TSM","대만반도체":"TSM","타이완반도체":"TSM",
+    "마이크론":"MU","micron":"MU",
+    "램리서치":"LRCX","lam research":"LRCX","램":"LRCX",
+    "kla":"KLAC","kla코퍼레이션":"KLAC",
+    "어플라이드머티리얼스":"AMAT","applied materials":"AMAT","어플라이드":"AMAT",
+    "asml":"ASML","에이에스엠엘":"ASML",
+    "시놉시스":"SNPS","synopsys":"SNPS",
+    "캐던스":"CDNS","cadence":"CDNS",
+    "텍사스인스트루먼트":"TXN","texas instruments":"TXN","ti":"TXN",
+    "마블":"MRVL","marvell":"MRVL",
+    "엔테그리스":"ENTG","entegris":"ENTG",
+    "글로벌파운드리":"GFS","globalfoundries":"GFS",
+    "모놀리식파워":"MPWR","monolithic power":"MPWR",
+    "온세미":"ON","on semiconductor":"ON",
+    "nxp":"NXPI","엔엑스피":"NXPI",
+    "울프스피드":"WOLF","wolfspeed":"WOLF",
+    "스카이웍스":"SWKS","skyworks":"SWKS",
+    "마이크로칩":"MCHP","microchip":"MCHP",
+    # Korean Stocks
+    "삼성전자":"005930.KS","삼성":"005930.KS","samsung":"005930.KS",
+    "sk하이닉스":"000660.KS","하이닉스":"000660.KS","skhynix":"000660.KS","sk hynix":"000660.KS",
+    "삼성바이오로직스":"207940.KS","삼성바이오":"207940.KS",
+    "현대차":"005380.KS","현대자동차":"005380.KS","hyundai":"005380.KS",
+    "기아":"000270.KS","kia":"000270.KS",
+    "네이버":"035420.KS","naver":"035420.KS",
+    "카카오":"035720.KS","kakao":"035720.KS",
+    "lg화학":"051910.KS","lgchem":"051910.KS","lg chem":"051910.KS",
+    "lg에너지솔루션":"373220.KS","lg에너지":"373220.KS","lges":"373220.KS",
+    "삼성sdi":"006400.KS","samsung sdi":"006400.KS",
+    "sk이노베이션":"096770.KS","sk innovation":"096770.KS",
+    "셀트리온":"068270.KS","celltrion":"068270.KS",
+    "포스코":"005490.KS","posco":"005490.KS",
+    "한국전력":"015760.KS","kepco":"015760.KS",
+    "kb금융":"105560.KS","kb":"105560.KS",
+    "신한금융":"055550.KS","shinhan":"055550.KS",
+    "현대모비스":"012330.KS","hyundai mobis":"012330.KS",
+    "카카오뱅크":"323410.KS","kakaobank":"323410.KS",
+    "크래프톤":"259960.KS","krafton":"259960.KS","배틀그라운드":"259960.KS",
+    "하이브":"352820.KS","hybe":"352820.KS","방탄소년단":"352820.KS","bts":"352820.KS",
+    "엔씨소프트":"036570.KS","ncsoft":"036570.KS",
+    "넥슨":"3659.T","nexon":"3659.T",
+    "두산에너빌리티":"034020.KS","두산":"034020.KS",
+    "한화에어로스페이스":"012450.KS","한화에어로":"012450.KS",
+    # Japan
+    "토요타":"TM","toyota":"TM",
+    "소니":"SONY","sony":"SONY",
+    "소프트뱅크":"9984.T","softbank":"9984.T",
+    "파나소닉":"PCRFY","panasonic":"PCRFY",
+    "도쿄일렉트론":"TOELY","tokyo electron":"TOELY","tel":"TOELY",
+    "신에츠화학":"SIEGY","shin-etsu":"SIEGY","신에츠":"SIEGY",
+    "히타치":"HTHIY","hitachi":"HTHIY",
+    "무라타":"MRAAY","murata":"MRAAY",
+    "키엔스":"KYCCF","keyence":"KYCCF",
+    # China
+    "알리바바":"BABA","alibaba":"BABA",
+    "jd닷컴":"JD","jd.com":"JD",
+    "바이두":"BIDU","baidu":"BIDU",
+    "니오":"NIO","nio":"NIO",
+    "리오토":"LI","li auto":"LI",
+    "샤오펑":"XPEV","xpeng":"XPEV",
+    "pdd":"PDD","핀둬둬":"PDD",
+    # Finance
+    "제이피모건":"JPM","jpmorgan":"JPM","jp모건":"JPM",
+    "뱅크오브아메리카":"BAC","bank of america":"BAC","뱅오아":"BAC",
+    "웰스파고":"WFC","wells fargo":"WFC",
+    "골드만삭스":"GS","goldman sachs":"GS","골드만":"GS",
+    "모건스탠리":"MS","morgan stanley":"MS",
+    "버크셔해서웨이":"BRK-B","berkshire":"BRK-B","버크셔":"BRK-B",
+    "비자":"V","visa":"V",
+    "마스터카드":"MA","mastercard":"MA",
+    "페이팔":"PYPL","paypal":"PYPL",
+    "블록":"SQ","block":"SQ","스퀘어":"SQ","square":"SQ",
+    "코인베이스":"COIN","coinbase":"COIN",
+    "블랙스톤":"BX","blackstone":"BX",
+    "kkr":"KKR",
+    "찰스슈왑":"SCHW","charles schwab":"SCHW",
+    # Healthcare & Pharma
+    "존슨앤존슨":"JNJ","johnson & johnson":"JNJ",
+    "유나이티드헬스":"UNH","unitedhealth":"UNH",
+    "일라이릴리":"LLY","eli lilly":"LLY","릴리":"LLY",
+    "노보노디스크":"NVO","novo nordisk":"NVO","노보":"NVO",
+    "애브비":"ABBV","abbvie":"ABBV",
+    "머크":"MRK","merck":"MRK",
+    "화이자":"PFE","pfizer":"PFE",
+    "써모피셔":"TMO","thermo fisher":"TMO",
+    "모더나":"MRNA","moderna":"MRNA",
+    "바이오엔텍":"BNTX","biontech":"BNTX",
+    "길리어드":"GILD","gilead":"GILD",
+    "바이오젠":"BIIB","biogen":"BIIB",
+    "일루미나":"ILMN","illumina":"ILMN",
+    "인튜이티브서지컬":"ISRG","intuitive surgical":"ISRG",
+    "덱스컴":"DXCM","dexcom":"DXCM",
+    "애보트":"ABT","abbott":"ABT",
+    # Energy & Oil
+    "엑슨모빌":"XOM","exxonmobil":"XOM","exxon":"XOM",
+    "쉐브론":"CVX","chevron":"CVX",
+    "코노코필립스":"COP","conocophillips":"COP",
+    "할리버튼":"HAL","halliburton":"HAL",
+    "슐럼버거":"SLB","schlumberger":"SLB",
+    "쉘":"SHEL","shell":"SHEL",
+    "bp":"BP",
+    "토탈에너지스":"TTE","totalenergies":"TTE",
+    "쉐니어에너지":"LNG","cheniere":"LNG",
+    "넥스트에라":"NEE","nextera":"NEE",
+    "컨스텔레이션에너지":"CEG","constellation energy":"CEG",
+    "비스트라":"VST","vistra":"VST",
+    # Solar
+    "앤페이즈":"ENPH","enphase":"ENPH",
+    "퍼스트솔라":"FSLR","first solar":"FSLR",
+    "솔라엣지":"SEDG","solaredge":"SEDG",
+    "선런":"RUN","sunrun":"RUN",
+    # Automotive
+    "포드":"F","ford":"F",
+    "제네럴모터스":"GM","general motors":"GM","지엠":"GM",
+    "리비안":"RIVN","rivian":"RIVN",
+    "루시드":"LCID","lucid":"LCID",
+    "스텔란티스":"STLA","stellantis":"STLA",
+    # Defense
+    "록히드마틴":"LMT","lockheed martin":"LMT","록히드":"LMT",
+    "레이시온":"RTX","raytheon":"RTX",
+    "노스롭그루만":"NOC","northrop grumman":"NOC","노스롭":"NOC",
+    "제네럴다이내믹스":"GD","general dynamics":"GD",
+    "보잉":"BA","boeing":"BA",
+    "크라토스":"KTOS","kratos":"KTOS",
+    # Battery & Materials
+    "퀀텀스케이프":"QS","quantumscape":"QS",
+    "에노빅스":"ENVX","enovix":"ENVX",
+    "알버마를":"ALB","albemarle":"ALB",
+    "sqm":"SQM",
+    # Quantum
+    "아이온큐":"IONQ","ionq":"IONQ",
+    "리게티":"RGTI","rigetti":"RGTI",
+    "디웨이브":"QBTS","d-wave":"QBTS",
+    # Space
+    "로켓랩":"RKLB","rocket lab":"RKLB",
+    "ast스페이스모바일":"ASTS","ast spacemobile":"ASTS",
+    "인튜이티브머신스":"LUNR","intuitive machines":"LUNR",
+    "버진갤럭틱":"SPCE","virgin galactic":"SPCE",
+    # Consumer
+    "월마트":"WMT","walmart":"WMT",
+    "코스트코":"COST","costco":"COST",
+    "홈디포":"HD","home depot":"HD",
+    "나이키":"NKE","nike":"NKE",
+    "맥도날드":"MCD","mcdonald's":"MCD","맥도":"MCD",
+    "스타벅스":"SBUX","starbucks":"SBUX",
+    "코카콜라":"KO","coca-cola":"KO","코카":"KO",
+    "펩시콜라":"PEP","pepsi":"PEP","펩시":"PEP",
+    "프록터앤갬블":"PG","procter & gamble":"PG","p&g":"PG",
+    "룰루레몬":"LULU","lululemon":"LULU",
+    "치폴레":"CMG","chipotle":"CMG",
+    "타겟":"TGT","target":"TGT",
+    "로우스":"LOW","lowe's":"LOW",
+    # Crypto
+    "비트코인":"BTC-USD","bitcoin":"BTC-USD","btc":"BTC-USD",
+    "이더리움":"ETH-USD","ethereum":"ETH-USD","eth":"ETH-USD",
+    "솔라나":"SOL-USD","solana":"SOL-USD","sol":"SOL-USD",
+    "마이크로스트래티지":"MSTR","microstrategy":"MSTR",
+    # Nuclear
+    "카메코":"CCJ","cameco":"CCJ",
+    "옥로":"OKLO","oklo":"OKLO",
+    "뉴스케일":"SMR","nuscale":"SMR",
+    # Commodities
+    "원유":"CL=F","wti":"CL=F","crude oil":"CL=F",
+    "천연가스":"NG=F","natural gas":"NG=F",
+    "금":"GC=F","gold":"GC=F",
+    "은":"SI=F","silver":"SI=F",
+    "구리":"HG=F","copper":"HG=F",
+    # ETFs
+    "qqq":"QQQ","나스닥etf":"QQQ",
+    "spy":"SPY","s&p500etf":"SPY",
+    "ark":"ARKK","아크":"ARKK",
+    "반도체etf":"SOXX","soxx":"SOXX",
+    "배터리etf":"LIT","리튬etf":"LIT",
+    "우라늄etf":"URA",
+    "태양광etf":"TAN",
+    "방산etf":"ITA",
+}
+
+def resolve_ticker(query: str) -> str:
+    """Resolve Korean/English name or ticker to Yahoo Finance symbol."""
+    q = query.strip()
+    q_lower = q.lower()
+    if q_lower in SEARCH_MAP:
+        return SEARCH_MAP[q_lower]
+    # Partial match
+    for key, val in SEARCH_MAP.items():
+        if q_lower in key or key in q_lower:
+            return val
+    return q.upper()
+
 # ─── S&P 500 + GLOBAL TICKERS ─────────────────────────────────────────────────
 SP500_POPULAR = {
     "Technology": [
@@ -921,11 +1156,23 @@ with st.sidebar:
         T("search_placeholder"),
         placeholder=T("search_placeholder"),
         label_visibility="collapsed",
+        key="search_box",
     )
     if st.button(T("search_btn"), use_container_width=True, type="primary"):
         if search_input.strip():
-            st.session_state.ticker = search_input.strip().upper()
+            resolved = resolve_ticker(search_input.strip())
+            st.session_state.ticker = resolved
             st.rerun()
+
+    # Search hint
+    if search_input.strip():
+        preview = resolve_ticker(search_input.strip())
+        if preview.upper() != search_input.strip().upper():
+            st.markdown(
+                f"<div style='color:#FFA500;font-size:0.75rem;margin-top:-8px;'>"
+                f"→ {preview}</div>",
+                unsafe_allow_html=True,
+            )
 
     st.divider()
 
